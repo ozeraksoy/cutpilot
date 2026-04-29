@@ -238,5 +238,42 @@ function getThemeInfo() {
 }
 
 function jumpCutTest() {
-  return 'Jump Cut testi calisti, ExtendScript baglantisi tamam';
+  try {
+    var seq = app.project.activeSequence;
+    if (!seq) {
+      return JSON.stringify({ ok: false, message: 'Aktif sekans bulunamadi' });
+    }
+
+    var seqName = seq.name;
+
+    if (seq.videoTracks.numTracks === 0) {
+      return JSON.stringify({ ok: false, message: 'Hic video track yok' });
+    }
+
+    var v1 = seq.videoTracks[0];
+    var clipCount = v1.clips.numItems;
+
+    if (clipCount === 0) {
+      return JSON.stringify({
+        ok: true,
+        sequenceName: seqName,
+        clipCount: 0,
+        firstClipName: null,
+        message: 'V1 track bos'
+      });
+    }
+
+    var firstClip = v1.clips[0];
+    var firstName = firstClip.name;
+
+    return JSON.stringify({
+      ok: true,
+      sequenceName: seqName,
+      clipCount: clipCount,
+      firstClipName: firstName,
+      message: 'OK'
+    });
+  } catch (e) {
+    return JSON.stringify({ ok: false, message: 'Hata: ' + e.toString() });
+  }
 }

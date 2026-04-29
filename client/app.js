@@ -883,6 +883,20 @@ function escapeHtml(str) {
 // Jump Cut test handler
 document.getElementById('jumpCutTestBtn').addEventListener('click', function() {
   csInterface.evalScript('jumpCutTest()', function(result) {
-    alert('Sonuc: ' + result);
+    try {
+      var data = JSON.parse(result);
+      if (data.ok) {
+        var msg = 'Sequence: ' + data.sequenceName + '\n' +
+                  'V1 klip sayisi: ' + data.clipCount;
+        if (data.firstClipName) {
+          msg += '\nIlk klip: ' + data.firstClipName;
+        }
+        alert(msg);
+      } else {
+        alert('Hata: ' + data.message);
+      }
+    } catch (e) {
+      alert('Parse hatasi: ' + result);
+    }
   });
 });
