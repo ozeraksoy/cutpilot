@@ -879,3 +879,10 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+// Jump Cut test handler
+document.getElementById('jumpCutTestBtn').addEventListener('click', function() {
+  csInterface.evalScript('jumpCutTest()', function(result) {
+    alert('Sonuc: ' + result);
+  });
+});

@@ -236,3 +236,7 @@ function getThemeInfo() {
     return JSON.stringify({ isDark: true });
   }
 }
+
+function jumpCutTest() {
+  return 'Jump Cut testi calisti, ExtendScript baglantisi tamam';
+}
