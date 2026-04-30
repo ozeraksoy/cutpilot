@@ -882,21 +882,56 @@ function escapeHtml(str) {
 
 // Jump Cut test handler
 document.getElementById('jumpCutTestBtn').addEventListener('click', function() {
-  csInterface.evalScript('jumpCutTest()', function(result) {
-    try {
-      var data = JSON.parse(result);
-      if (data.ok) {
-        var msg = 'Sequence: ' + data.sequenceName + '\n' +
-                  'V1 klip sayisi: ' + data.clipCount;
-        if (data.firstClipName) {
-          msg += '\nIlk klip: ' + data.firstClipName;
-        }
-        alert(msg);
-      } else {
-        alert('Hata: ' + data.message);
-      }
-    } catch (e) {
-      alert('Parse hatasi: ' + result);
+  if (!state.segments || state.segments.length === 0) {
+    alert('Once transkripsiyon yapin. Whisper segmentleri olmadan sessizlik tespit edilemez.');
+    return;
+  }
+
+  const minSilenceSec = 0.3;
+  const silences = [];
+
+  if (state.segments[0].start > minSilenceSec) {
+    silences.push({
+      start: 0,
+      end: state.segments[0].start,
+      type: 'start',
+      duration: state.segments[0].start
+    });
+  }
+
+  for (let i = 0; i < state.segments.length - 1; i++) {
+    const currentEnd = state.segments[i].end;
+    const nextStart = state.segments[i + 1].start;
+    const gap = nextStart - currentEnd;
+
+    if (gap > minSilenceSec) {
+      silences.push({
+        start: currentEnd,
+        end: nextStart,
+        type: 'between',
+        duration: gap
+      });
     }
+  }
+
+  const totalCutDuration = silences.reduce((sum, s) => sum + s.duration, 0);
+
+  console.log('Jump Cut: Found', silences.length, 'silences', silences);
+
+  if (silences.length === 0) {
+    alert('Hic sessizlik tespit edilmedi (min ' + minSilenceSec + 'sn esigine gore).');
+    return;
+  }
+
+  let msg = silences.length + ' sessizlik tespit edildi\n';
+  msg += 'Toplam kesilecek: ' + totalCutDuration.toFixed(2) + 'sn\n\n';
+
+  silences.forEach((s, idx) => {
+    const startStr = s.start.toFixed(2);
+    const endStr = s.end.toFixed(2);
+    const durStr = s.duration.toFixed(2);
+    msg += (idx + 1) + '. ' + startStr + 'sn -> ' + endStr + 'sn (' + durStr + 'sn)\n';
   });
+
+  alert(msg);
 });
