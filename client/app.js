@@ -22,6 +22,7 @@ const state = {
   apiKey:       '',
   clipInfo:     null,
   segments:     [],        // { start, end, text, translated? }
+  words:        [],        // { word, start, end } — word-level timestamps for Jump Cut
   ffmpegPath:   'ffmpeg',
   ffmpegOK:     false,
   isProcessing: false,
@@ -281,6 +282,7 @@ async function startTranscription() {
   }
 
   hideError();
+  state.words = [];
   state.isProcessing = true;
   updateTranscribeButton();
 
@@ -353,6 +355,10 @@ async function transcribeClip(clip, progressStart, progressEnd) {
 
     if (!whisperResult.segments || whisperResult.segments.length === 0) {
       throw new Error('Transkripsiyon boş döndü. Klipte ses olduğundan emin olun.');
+    }
+
+    if (whisperResult.words && Array.isArray(whisperResult.words) && whisperResult.words.length > 0) {
+      state.words = state.words.concat(whisperResult.words);
     }
 
     return whisperResult.segments.map(seg => ({
@@ -552,6 +558,12 @@ function whisperTranscribe(audioFilePath, apiKey, language) {
       `--${boundary}\r\n` +
       `Content-Disposition: form-data; name="timestamp_granularities[]"\r\n\r\n` +
       `segment\r\n`
+    ));
+
+    parts.push(Buffer.from(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="timestamp_granularities[]"\r\n\r\n` +
+      `word\r\n`
     ));
 
     // Kapanış
@@ -882,33 +894,28 @@ function escapeHtml(str) {
 
 // Jump Cut test handler
 document.getElementById('jumpCutTestBtn').addEventListener('click', function() {
-  if (!state.segments || state.segments.length === 0) {
-    alert('Once transkripsiyon yapin. Whisper segmentleri olmadan sessizlik tespit edilemez.');
+  if (!state.words || state.words.length === 0) {
+    alert('Once transkripsiyon yapin. Word-level timestamps olmadan Jump Cut yapilamaz.');
     return;
   }
 
   const minSilenceSec = 0.3;
   const silences = [];
 
-  if (state.segments[0].start > minSilenceSec) {
+  if (state.words[0].start > minSilenceSec) {
     silences.push({
       start: 0,
-      end: state.segments[0].start,
-      type: 'start',
-      duration: state.segments[0].start
+      end: state.words[0].start,
+      duration: state.words[0].start
     });
   }
 
-  for (let i = 0; i < state.segments.length - 1; i++) {
-    const currentEnd = state.segments[i].end;
-    const nextStart = state.segments[i + 1].start;
-    const gap = nextStart - currentEnd;
-
+  for (let i = 0; i < state.words.length - 1; i++) {
+    const gap = state.words[i + 1].start - state.words[i].end;
     if (gap > minSilenceSec) {
       silences.push({
-        start: currentEnd,
-        end: nextStart,
-        type: 'between',
+        start: state.words[i].end,
+        end: state.words[i + 1].start,
         duration: gap
       });
     }
@@ -916,7 +923,7 @@ document.getElementById('jumpCutTestBtn').addEventListener('click', function() {
 
   const totalCutDuration = silences.reduce((sum, s) => sum + s.duration, 0);
 
-  console.log('Jump Cut: Found', silences.length, 'silences', silences);
+  console.log('Jump Cut: Found', silences.length, 'silences from', state.words.length, 'words', silences);
 
   if (silences.length === 0) {
     alert('Hic sessizlik tespit edilmedi (min ' + minSilenceSec + 'sn esigine gore).');
