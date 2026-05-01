@@ -892,7 +892,7 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-// Jump Cut test handler
+// Jump Cut handler
 document.getElementById('jumpCutTestBtn').addEventListener('click', function() {
   if (!state.words || state.words.length === 0) {
     alert('Once transkripsiyon yapin. Word-level timestamps olmadan Jump Cut yapilamaz.');
@@ -921,24 +921,56 @@ document.getElementById('jumpCutTestBtn').addEventListener('click', function() {
     }
   }
 
-  const totalCutDuration = silences.reduce((sum, s) => sum + s.duration, 0);
-
-  console.log('Jump Cut: Found', silences.length, 'silences from', state.words.length, 'words', silences);
+  console.log('Jump Cut: Found', silences.length, 'silences', silences);
 
   if (silences.length === 0) {
-    alert('Hic sessizlik tespit edilmedi (min ' + minSilenceSec + 'sn esigine gore).');
+    alert('Hic sessizlik tespit edilmedi.');
     return;
   }
 
-  let msg = silences.length + ' sessizlik tespit edildi\n';
-  msg += 'Toplam kesilecek: ' + totalCutDuration.toFixed(2) + 'sn\n\n';
+  const totalCut = silences.reduce((sum, s) => sum + s.duration, 0);
 
-  silences.forEach((s, idx) => {
-    const startStr = s.start.toFixed(2);
-    const endStr = s.end.toFixed(2);
-    const durStr = s.duration.toFixed(2);
-    msg += (idx + 1) + '. ' + startStr + 'sn -> ' + endStr + 'sn (' + durStr + 'sn)\n';
+  // Konusma araliklari = silence'lerin tersi
+  const speechIntervals = [];
+  let cursor = 0;
+  for (let i = 0; i < silences.length; i++) {
+    if (silences[i].start > cursor) {
+      speechIntervals.push({ start: cursor, end: silences[i].start });
+    }
+    cursor = silences[i].end;
+  }
+  const lastWordEnd = state.words[state.words.length - 1].end;
+  if (cursor < lastWordEnd) {
+    speechIntervals.push({ start: cursor, end: lastWordEnd });
+  }
+
+  console.log('Jump Cut: Speech intervals to keep', speechIntervals);
+
+  const confirmMsg = silences.length + ' sessizlik tespit edildi (toplam ' +
+                     totalCut.toFixed(2) + 'sn kesilecek).\n' +
+                     speechIntervals.length + ' konusma araligi yapistirilacak.\n\n' +
+                     'Yeni sekans olusturulsun mu?\n' +
+                     '(Mevcut sekansiniz korunacak — orijinal medya yeniden import edilecek)';
+
+  if (!confirm(confirmMsg)) {
+    return;
+  }
+
+  const paramsJSON = JSON.stringify({ speechIntervals: speechIntervals });
+  const escapedJSON = paramsJSON.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+  csInterface.evalScript("applyJumpCutsFromIntervalsV2('" + escapedJSON + "')", function(result) {
+    console.log('Host returned:', result);
+    try {
+      const data = JSON.parse(result);
+      if (data.ok) {
+        alert('Yeni sekans olusturuldu: ' + data.newSequenceName + '\n' +
+              'Yapistirilan segment sayisi: ' + data.segmentsPlaced);
+      } else {
+        alert('Hata: ' + data.message);
+      }
+    } catch (e) {
+      alert('Parse hatasi: ' + result);
+    }
   });
-
-  alert(msg);
 });

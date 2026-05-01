@@ -237,6 +237,167 @@ function getThemeInfo() {
   }
 }
 
+function applyJumpCutsFromIntervalsV2(paramsJSON) {
+  try {
+    var params = JSON.parse(paramsJSON);
+    var intervals = params.speechIntervals;
+
+    if (!intervals || intervals.length === 0) {
+      return JSON.stringify({ ok: false, message: 'Konusma araligi yok' });
+    }
+
+    var srcSeq = app.project.activeSequence;
+    if (!srcSeq) {
+      return JSON.stringify({ ok: false, message: 'Aktif sekans bulunamadi' });
+    }
+
+    if (srcSeq.videoTracks.numTracks === 0) {
+      return JSON.stringify({ ok: false, message: 'Video track yok' });
+    }
+
+    var srcV1 = srcSeq.videoTracks[0];
+    if (srcV1.clips.numItems === 0) {
+      return JSON.stringify({ ok: false, message: 'V1 track bos' });
+    }
+
+    var srcClip = srcV1.clips[0];
+    var srcProjItem = srcClip.projectItem;
+    if (!srcProjItem) {
+      return JSON.stringify({ ok: false, message: 'Kaynak klip projectItem yok' });
+    }
+
+    if (typeof srcProjItem.getMediaPath !== 'function') {
+      return JSON.stringify({ ok: false, message: 'getMediaPath desteklenmiyor' });
+    }
+    var mediaPath = srcProjItem.getMediaPath();
+    if (!mediaPath) {
+      return JSON.stringify({ ok: false, message: 'Medya path bulunamadi' });
+    }
+
+    // Medyayi yeniden import et (orijinalden bagimsiz yeni projectItem)
+    var importOk = app.project.importFiles([mediaPath], false, app.project.rootItem, false);
+    if (!importOk) {
+      return JSON.stringify({ ok: false, message: 'Medya yeniden import edilemedi' });
+    }
+
+    // Yeni eklenen projectItem'i bul
+    var newProjItem = findMostRecentImport(mediaPath, srcProjItem);
+    if (!newProjItem) {
+      return JSON.stringify({ ok: false, message: 'Yeniden import edilen projectItem bulunamadi' });
+    }
+
+    // Guvenlik kapisi: ayni obje mi?
+    if (newProjItem === srcProjItem) {
+      return JSON.stringify({ ok: false, message: 'Re-import basarisiz - ayni projectItem dondu, orijinali bozmamak icin durduruluyor' });
+    }
+
+    // Yeni sekans olustur
+    var srcSettings = srcSeq.getSettings();
+    var timestamp = new Date().getTime();
+    var newSeqName = 'TalkyClip_' + timestamp;
+
+    var newSeq = app.project.createNewSequence(newSeqName, '');
+    if (!newSeq) {
+      return JSON.stringify({ ok: false, message: 'Yeni sekans olusturulamadi' });
+    }
+
+    try {
+      newSeq.setSettings(srcSettings);
+    } catch (settingsErr) {
+      // Kritik degil, varsayilan ayarlarla devam
+    }
+
+    var newV1 = newSeq.videoTracks[0];
+    if (!newV1) {
+      return JSON.stringify({ ok: false, message: 'Yeni sekans V1 track yok' });
+    }
+
+    // Konusma araliklarini sirayla yapistir
+    var TICKS_PER_SEC = 254016000000;
+    var insertionTicks = 0;
+    var inT = new Time();
+    var outT = new Time();
+    var insertionTime = new Time();
+    var placed = 0;
+
+    for (var i = 0; i < intervals.length; i++) {
+      var startSec = intervals[i].start;
+      var endSec = intervals[i].end;
+      var durSec = endSec - startSec;
+
+      if (durSec <= 0) continue;
+
+      inT.ticks = Math.round(startSec * TICKS_PER_SEC).toString();
+      outT.ticks = Math.round(endSec * TICKS_PER_SEC).toString();
+
+      newProjItem.setInPoint(inT, 4);
+      newProjItem.setOutPoint(outT, 4);
+
+      insertionTime.ticks = insertionTicks.toString();
+      newV1.overwriteClip(newProjItem, insertionTime);
+
+      insertionTicks = insertionTicks + Math.round(durSec * TICKS_PER_SEC);
+      placed = placed + 1;
+    }
+
+    // Yeni projectItem'in in/out'unu sifirla
+    try {
+      var resetIn = new Time();
+      resetIn.ticks = '0';
+      newProjItem.setInPoint(resetIn, 4);
+      var resetOut = new Time();
+      resetOut.ticks = (TICKS_PER_SEC * 99999).toString();
+      newProjItem.setOutPoint(resetOut, 4);
+    } catch (resetErr) {
+      // Kritik degil
+    }
+
+    return JSON.stringify({
+      ok: true,
+      newSequenceName: newSeqName,
+      segmentsPlaced: placed
+    });
+
+  } catch (e) {
+    return JSON.stringify({ ok: false, message: 'Hata: ' + e.toString() });
+  }
+}
+
+function countAllProjectItems(folder) {
+  var count = 0;
+  if (!folder || !folder.children) return 0;
+  for (var i = 0; i < folder.children.numItems; i++) {
+    var child = folder.children[i];
+    count = count + 1;
+    if (child.type === 2) {
+      count = count + countAllProjectItems(child);
+    }
+  }
+  return count;
+}
+
+function findMostRecentImport(mediaPath, excludeItem) {
+  return findItemRecursive(app.project.rootItem, mediaPath, excludeItem);
+}
+
+function findItemRecursive(folder, mediaPath, excludeItem) {
+  if (!folder || !folder.children) return null;
+  // Sondan basa dogru ara — yeni eklenen sona ekleniyor
+  for (var i = folder.children.numItems - 1; i >= 0; i--) {
+    var child = folder.children[i];
+    if (child === excludeItem) continue;
+    if (typeof child.getMediaPath === 'function') {
+      var p = child.getMediaPath();
+      if (p === mediaPath) return child;
+    }
+    if (child.type === 2) {
+      var found = findItemRecursive(child, mediaPath, excludeItem);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 function jumpCutTest() {
   try {
     var seq = app.project.activeSequence;
