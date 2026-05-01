@@ -336,7 +336,19 @@ function applyJumpCutsFromIntervalsV2(paramsJSON) {
       insertionTime.ticks = insertionTicks.toString();
       newV1.overwriteClip(newProjItem, insertionTime);
 
-      insertionTicks = insertionTicks + Math.round(durSec * TICKS_PER_SEC);
+      // Gercekte yapisan klibin end ticks'ini al — frame rounding gap'lerini onler
+      var clipsCount = newV1.clips.numItems;
+      if (clipsCount > 0) {
+        var lastClip = newV1.clips[clipsCount - 1];
+        if (lastClip && lastClip.end && lastClip.end.ticks) {
+          insertionTicks = parseInt(lastClip.end.ticks, 10);
+        } else {
+          insertionTicks = insertionTicks + Math.round(durSec * TICKS_PER_SEC);
+        }
+      } else {
+        insertionTicks = insertionTicks + Math.round(durSec * TICKS_PER_SEC);
+      }
+
       placed = placed + 1;
     }
 
