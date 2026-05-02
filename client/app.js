@@ -32,6 +32,19 @@ const state = {
   batchClips:   []
 };
 
+// ── Filler Word Detection ─────────────────────────────────────────────────────
+const FILLER_WORDS = [
+  'sey', 'ee', 'eee', 'ii', 'iii', 'aa', 'aaa', 'oo', 'ooo',
+  'hmm', 'mmm', 'hah', 'eh', 'ah',
+  'um', 'uh', 'umm', 'uhh', 'er', 'erm', 'mhm'
+];
+
+function isFillerWord(word) {
+  if (!word || typeof word !== 'string') return false;
+  const cleaned = word.toLowerCase().replace(/[^\w]/g, '');
+  return FILLER_WORDS.indexOf(cleaned) !== -1;
+}
+
 // ── Başlatma ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', init);
 
@@ -970,46 +983,81 @@ document.getElementById('jumpCutTestBtn').addEventListener('click', function() {
   }
 
   const minSilenceSec = 0.3;
+  const fillerCount = { count: 0 };
 
   // Sessizlikleri sequence pozisyonlarina gore tespit et
-  const silences = [];
+  const rawSilences = [];
 
   if (state.words[0].seqStart > minSilenceSec) {
-    silences.push({
+    rawSilences.push({
       seqStart: 0,
       seqEnd: state.words[0].seqStart,
-      duration: state.words[0].seqStart
+      duration: state.words[0].seqStart,
+      type: 'silence'
     });
   }
 
   for (let i = 0; i < state.words.length - 1; i++) {
     const gap = state.words[i + 1].seqStart - state.words[i].seqEnd;
     if (gap > minSilenceSec) {
-      silences.push({
+      rawSilences.push({
         seqStart: state.words[i].seqEnd,
         seqEnd:   state.words[i + 1].seqStart,
-        duration: gap
+        duration: gap,
+        type: 'silence'
       });
     }
   }
 
-  console.log('Jump Cut: Found', silences.length, 'silences (seq-relative)', silences);
+  // Filler kelimeleri tespit et — sessizlik gibi cikar
+  for (let i = 0; i < state.words.length; i++) {
+    const w = state.words[i];
+    if (isFillerWord(w.word)) {
+      rawSilences.push({
+        seqStart: w.seqStart,
+        seqEnd:   w.seqEnd,
+        duration: w.seqEnd - w.seqStart,
+        type: 'filler',
+        text: w.word
+      });
+      fillerCount.count++;
+    }
+  }
 
-  if (silences.length === 0) {
-    alert('Hic sessizlik tespit edilmedi.');
+  // Kronolojik siraya koy, ust uste binenleri birlestir
+  rawSilences.sort((a, b) => a.seqStart - b.seqStart);
+
+  const finalSilences = [];
+  for (let i = 0; i < rawSilences.length; i++) {
+    const last = finalSilences[finalSilences.length - 1];
+    const curr = rawSilences[i];
+    if (last && curr.seqStart <= last.seqEnd + 0.05) {
+      last.seqEnd = Math.max(last.seqEnd, curr.seqEnd);
+      last.duration = last.seqEnd - last.seqStart;
+      last.type = 'merged';
+    } else {
+      finalSilences.push({ seqStart: curr.seqStart, seqEnd: curr.seqEnd, duration: curr.duration, type: curr.type, text: curr.text });
+    }
+  }
+
+  console.log('Jump Cut:', rawSilences.length, 'sorunlu aralik (', fillerCount.count, 'filler dahil)');
+  console.log('Birlestirilmis:', finalSilences.length, 'aralik');
+
+  if (finalSilences.length === 0) {
+    alert('Hic kesilecek aralik tespit edilmedi.');
     return;
   }
 
-  const totalCut = silences.reduce((sum, s) => sum + s.duration, 0);
+  const totalCut = finalSilences.reduce((sum, s) => sum + s.duration, 0);
 
   // Speech interval'lari seq pozisyonlarinda hesapla
   const speechIntervals = [];
   let cursor = 0;
-  for (let i = 0; i < silences.length; i++) {
-    if (silences[i].seqStart > cursor) {
-      speechIntervals.push({ seqStart: cursor, seqEnd: silences[i].seqStart });
+  for (let i = 0; i < finalSilences.length; i++) {
+    if (finalSilences[i].seqStart > cursor) {
+      speechIntervals.push({ seqStart: cursor, seqEnd: finalSilences[i].seqStart });
     }
-    cursor = silences[i].seqEnd;
+    cursor = finalSilences[i].seqEnd;
   }
   const lastWordSeqEnd = state.words[state.words.length - 1].seqEnd;
   if (cursor < lastWordSeqEnd) {
@@ -1046,8 +1094,10 @@ document.getElementById('jumpCutTestBtn').addEventListener('click', function() {
     return;
   }
 
-  const confirmMsg = silences.length + ' sessizlik tespit edildi (toplam ' +
-                     totalCut.toFixed(2) + 'sn kesilecek).\n' +
+  const confirmMsg = finalSilences.length + ' aralik tespit edildi (' +
+                     fillerCount.count + ' filler + ' +
+                     (finalSilences.length - fillerCount.count) + ' sessizlik)\n' +
+                     'Toplam kesilecek: ' + totalCut.toFixed(2) + 'sn\n\n' +
                      enrichedIntervals.length + ' konusma araligi yapistirilacak.\n\n' +
                      'Yeni sekans olusturulsun mu?';
 
