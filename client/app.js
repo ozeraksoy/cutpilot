@@ -40,21 +40,31 @@ Sana asagida bir uzun videonun transkripti verilecek. Her satir bir konusma segm
 
 GOREV: Bu transkriptten {COUNT} adet VIRAL POTANSIYELI YUKSEK parca sec.
 
-Her parca su kriterleri saglamali:
-- Sure: {MIN_DUR}-{MAX_DUR} saniye arasi
+ZORUNLU SURE KURALI:
+- Her parca {MIN_DUR}-{MAX_DUR} SANIYE arasi olmak ZORUNDA
+- {MIN_DUR}sn'den kisa parcalar KESINLIKLE secilemez - bu kural ihlal edilemez
+- Tek bir transkript segmenti yeterli degilse, ARDISIK BIRDEN FAZLA SEGMENTI BIRLESTIR
+- Ornek: 3sn'lik segment yeterli degildir; ama 3+4+5=12sn de yeterli degildir; 3+4+5+8=20sn yeterlidir
+- startSec = ilk birlestirilen segmentin start'i
+- endSec = son birlestirilen segmentin end'i
+
+ICERIK KRITERLERI:
 - Hook ile baslamali - ilk 3 saniyede izleyiciyi yakalamali
 - Kendi basina anlamli olmali - onceki baglama ihtiyac duymamali
-- Net bir payoff veya sonuc olmali
-- Su unsurlardan en az birini icermeli: ilginc bilgi, mizah, surpriz, duygusal an, pratik tavsiye, kontroversiyel gorus
+- Net bir payoff veya sonuc olmali - bos yere uzatmamali
+- Su unsurlardan en az birini icermeli: ilginc bilgi, mizah, surpriz, duygusal an, pratik tavsiye, kontroversiyel goru
 
 OZELLIKLE KACINMASI GEREKEN:
-- Yarim kalan kisimlar
-- Cok teknik veya niche kisimlar
+- "Bunu daha sonra anlatacagim" gibi yarim kalan kisimlar
+- Cok teknik veya niche kisimlar (genis kitleye hitap etmeli)
 - Sadece selamlasma veya kapanis kisimlari
-- Ardisik filler kelimeler
+- Ardisik filler kelimeler ("yani yani sey ee...")
+- Tek cumlelik cok kisa parcalar (asagari {MIN_DUR}sn olmali)
 
 CIKTI FORMATI (sadece JSON, baska aciklama yapma):
-{"shorts": [{"startSec": 45.32, "endSec": 78.45, "title": "Baslik (max 60 karakter)", "hook": "Ilk cumle ozeti (max 100 karakter)", "reasoning": "Neden viral olabilir (max 200 karakter)", "tags": ["etiket1", "etiket2"]}]}
+{"shorts": [{"startSec": 45.32, "endSec": 78.45, "title": "Kisa basta basliki (max 60 karakter)", "hook": "Ilk cumlenin ozeti (max 100 karakter)", "reasoning": "Neden viral olabilir, kisa aciklama (max 200 karakter)", "tags": ["motivasyon", "girisimcilik", "ipucu"]}]}
+
+ONEMLI: endSec - startSec hesabi yap, sonuc {MIN_DUR}'den kucukse ardisik segmentleri ekleyerek genislet.
 
 TRANSKRIPT:
 {TRANSCRIPT}
