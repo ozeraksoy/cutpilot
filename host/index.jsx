@@ -568,3 +568,133 @@ function jumpCutTest() {
     return JSON.stringify({ ok: false, message: 'Hata: ' + e.toString() });
   }
 }
+
+function createViralSequences(paramsJSON) {
+  try {
+    var params = JSON.parse(paramsJSON);
+    var candidates = params.candidates;
+
+    if (!candidates || candidates.length === 0) {
+      return JSON.stringify({ ok: false, message: 'Aday yok' });
+    }
+
+    var srcSeq = app.project.activeSequence;
+    if (!srcSeq) {
+      return JSON.stringify({ ok: false, message: 'Aktif sekans bulunamadi' });
+    }
+
+    var srcSettings = srcSeq.getSettings();
+    if (!srcSettings) {
+      return JSON.stringify({ ok: false, message: 'Sekans ayarlari alinamadi' });
+    }
+
+    var srcHeight = srcSettings.videoFrameHeight;
+    var targetHeight = srcHeight;
+    var targetWidth = Math.round(srcHeight * 9 / 16);
+
+    var created = [];
+    var failed = [];
+    var TICKS_PER_SEC = 254016000000;
+
+    for (var ci = 0; ci < candidates.length; ci++) {
+      var candidate = candidates[ci];
+
+      try {
+        var safeName = (candidate.title || '').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);
+        var seqName = 'Viral_' + candidate.index + '_' + safeName;
+        var newSeq = app.project.createNewSequence(seqName, '');
+        if (!newSeq) {
+          failed.push({ title: candidate.title, error: 'Sekans olusturulamadi' });
+          continue;
+        }
+
+        try {
+          var newSettings = srcSeq.getSettings();
+          newSettings.videoFrameWidth = targetWidth;
+          newSettings.videoFrameHeight = targetHeight;
+          newSeq.setSettings(newSettings);
+        } catch (settingsErr) {
+          // Kritik degil
+        }
+
+        var newV1 = newSeq.videoTracks[0];
+        if (!newV1) {
+          failed.push({ title: candidate.title, error: 'V1 track yok' });
+          continue;
+        }
+
+        var insertionTicks = 0;
+        var placedCount = 0;
+
+        for (var ii = 0; ii < candidate.intervals.length; ii++) {
+          var iv = candidate.intervals[ii];
+          var durSec = iv.srcEnd - iv.srcStart;
+          if (durSec <= 0) continue;
+
+          var importOk = app.project.importFiles([iv.mediaPath], false, app.project.rootItem, false);
+          if (!importOk) continue;
+
+          var newProjItem = findMostRecentImport(iv.mediaPath, null);
+          if (!newProjItem) continue;
+
+          var inT = new Time();
+          var outT = new Time();
+          var insertionTime = new Time();
+
+          inT.ticks = Math.round(iv.srcStart * TICKS_PER_SEC).toString();
+          outT.ticks = Math.round(iv.srcEnd * TICKS_PER_SEC).toString();
+
+          newProjItem.setInPoint(inT, 4);
+          newProjItem.setOutPoint(outT, 4);
+
+          insertionTime.ticks = insertionTicks.toString();
+          newV1.overwriteClip(newProjItem, insertionTime);
+
+          var clipsCount = newV1.clips.numItems;
+          if (clipsCount > 0) {
+            var lastClip = newV1.clips[clipsCount - 1];
+            if (lastClip && lastClip.end && lastClip.end.ticks) {
+              insertionTicks = parseInt(lastClip.end.ticks, 10);
+            } else {
+              insertionTicks = insertionTicks + Math.round(durSec * TICKS_PER_SEC);
+            }
+          } else {
+            insertionTicks = insertionTicks + Math.round(durSec * TICKS_PER_SEC);
+          }
+
+          // in/out sifirla — projectItem gelecek kullanim icin temiz kalsin
+          try {
+            var resetIn = new Time();
+            resetIn.ticks = '0';
+            newProjItem.setInPoint(resetIn, 4);
+            var resetOut = new Time();
+            resetOut.ticks = (TICKS_PER_SEC * 99999).toString();
+            newProjItem.setOutPoint(resetOut, 4);
+          } catch (resetErr) {
+            // Kritik degil
+          }
+
+          placedCount = placedCount + 1;
+        }
+
+        if (placedCount > 0) {
+          created.push({ name: seqName, segments: placedCount });
+        } else {
+          failed.push({ title: candidate.title, error: 'Hicbir segment yapistirilamadi' });
+        }
+
+      } catch (candidateErr) {
+        failed.push({ title: candidate.title, error: candidateErr.toString() });
+      }
+    }
+
+    return JSON.stringify({
+      ok: true,
+      created: created,
+      failed: failed
+    });
+
+  } catch (e) {
+    return JSON.stringify({ ok: false, message: 'Hata: ' + e.toString() });
+  }
+}

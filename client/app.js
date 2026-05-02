@@ -1296,6 +1296,7 @@ document.getElementById('viralAnalyzeBtn').addEventListener('click', async funct
 
     const finalShorts = filteredShorts.slice(0, targetCount);
     state.viralCandidates = finalShorts;
+    document.getElementById('generateViralBtn').disabled = false;
 
     console.log('=== VIRAL CANDIDATES ===');
     finalShorts.forEach(function(s, i) {
@@ -1320,4 +1321,131 @@ document.getElementById('viralAnalyzeBtn').addEventListener('click', async funct
     btn.textContent = originalText;
     btn.disabled = false;
   }
+});
+
+// Viral aday icin: state.words'lerinden mediaPath bazli intervals olustur
+function buildIntervalsForCandidate(candidate, words) {
+  const candidateWords = words.filter(w =>
+    w.seqEnd >= candidate.startSec && w.seqStart <= candidate.endSec
+  );
+
+  if (candidateWords.length === 0) {
+    return [];
+  }
+
+  const intervals = [];
+  let currentInterval = null;
+
+  for (let i = 0; i < candidateWords.length; i++) {
+    const w = candidateWords[i];
+    let needNew = false;
+
+    if (!currentInterval) {
+      needNew = true;
+    } else if (currentInterval.mediaPath !== w.mediaPath) {
+      needNew = true;
+    } else {
+      const srcGap = w.srcStart - currentInterval.srcEnd;
+      if (srcGap > 1.0) {
+        needNew = true;
+      }
+    }
+
+    if (needNew) {
+      if (currentInterval) {
+        intervals.push(currentInterval);
+      }
+      currentInterval = {
+        mediaPath: w.mediaPath,
+        srcStart: w.srcStart,
+        srcEnd: w.srcEnd
+      };
+    } else {
+      currentInterval.srcEnd = w.srcEnd;
+    }
+  }
+
+  if (currentInterval) {
+    intervals.push(currentInterval);
+  }
+
+  return intervals;
+}
+
+document.getElementById('generateViralBtn').addEventListener('click', async function() {
+  if (!state.viralCandidates || state.viralCandidates.length === 0) {
+    alert('Once "AI Viral Analiz Et" tiklayip aday uretin.');
+    return;
+  }
+
+  if (!state.words || state.words.length === 0) {
+    alert('Word-level transkript yok. Yeniden transkripsiyon yapin.');
+    return;
+  }
+
+  const confirmMsg = state.viralCandidates.length + ' viral aday icin ayri ayri 9:16 sekans olusturulsun mu?\n\n' +
+                     'Her sekans icin yeni bir Premiere sekansi yaratilacak.\n' +
+                     'Mevcut sekansiniz korunacak.';
+  if (!confirm(confirmMsg)) {
+    return;
+  }
+
+  const btn = document.getElementById('generateViralBtn');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Sekanslar olusturuluyor...';
+
+  const allCandidatesWithIntervals = state.viralCandidates.map((c, idx) => ({
+    index: idx + 1,
+    title: c.title,
+    intervals: buildIntervalsForCandidate(c, state.words)
+  }));
+
+  const validCandidates = allCandidatesWithIntervals.filter(c => c.intervals.length > 0);
+
+  if (validCandidates.length === 0) {
+    alert('Hicbir aday icin gecerli interval olusturulamadi. Word-level transkript yeniden yapin.');
+    btn.disabled = false;
+    btn.textContent = originalText;
+    return;
+  }
+
+  console.log('Generating sequences for', validCandidates.length, 'candidates');
+  validCandidates.forEach((c, i) => {
+    console.log((i + 1) + '. ' + c.title + ' — ' + c.intervals.length + ' interval');
+    c.intervals.forEach((iv, j) => {
+      console.log('   [' + j + '] ' + iv.mediaPath + ' src:' + iv.srcStart.toFixed(2) + '-' + iv.srcEnd.toFixed(2));
+    });
+  });
+
+  const paramsJSON = JSON.stringify({ candidates: validCandidates });
+  const escapedJSON = paramsJSON.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+  csInterface.evalScript("createViralSequences('" + escapedJSON + "')", function(result) {
+    console.log('Host returned:', result);
+    btn.disabled = false;
+    btn.textContent = originalText;
+
+    try {
+      const data = JSON.parse(result);
+      if (data.ok) {
+        let summary = data.created.length + ' viral sekans olusturuldu:\n\n';
+        data.created.forEach(c => {
+          summary += '+ ' + c.name + ' (' + c.segments + ' segment)\n';
+        });
+        if (data.failed && data.failed.length > 0) {
+          summary += '\nBasarisiz:\n';
+          data.failed.forEach(f => {
+            summary += '- ' + f.title + ': ' + f.error + '\n';
+          });
+        }
+        summary += '\nDetaylar console\'da.';
+        alert(summary);
+      } else {
+        alert('Hata: ' + data.message);
+      }
+    } catch (e) {
+      alert('Parse hatasi. Console kontrol edin.\n\n' + result.substring(0, 300));
+    }
+  });
 });
