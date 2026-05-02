@@ -397,7 +397,7 @@ function findItemRecursive(folder, mediaPath, excludeItem) {
   // Sondan basa dogru ara — yeni eklenen sona ekleniyor
   for (var i = folder.children.numItems - 1; i >= 0; i--) {
     var child = folder.children[i];
-    if (child === excludeItem) continue;
+    if (excludeItem && child === excludeItem) continue; // null gecilirse hicbir item exclude edilmez
     if (typeof child.getMediaPath === 'function') {
       var p = child.getMediaPath();
       if (p === mediaPath) return child;
@@ -408,6 +408,124 @@ function findItemRecursive(folder, mediaPath, excludeItem) {
     }
   }
   return null;
+}
+
+function applyJumpCutsFromIntervalsV3(paramsJSON) {
+  try {
+    var params = JSON.parse(paramsJSON);
+    var intervals = params.enrichedIntervals;
+
+    if (!intervals || intervals.length === 0) {
+      return JSON.stringify({ ok: false, message: 'Konusma araligi yok' });
+    }
+
+    // Tum interval'larin mediaPath'i ayni mi kontrol et
+    var firstMediaPath = intervals[0].mediaPath;
+    for (var k = 0; k < intervals.length; k++) {
+      if (intervals[k].mediaPath !== firstMediaPath) {
+        return JSON.stringify({ ok: false, message: 'Birden fazla medya henuz desteklenmiyor' });
+      }
+    }
+
+    var srcSeq = app.project.activeSequence;
+    if (!srcSeq) {
+      return JSON.stringify({ ok: false, message: 'Aktif sekans bulunamadi' });
+    }
+
+    // Medyayi yeniden import et
+    var importOk = app.project.importFiles([firstMediaPath], false, app.project.rootItem, false);
+    if (!importOk) {
+      return JSON.stringify({ ok: false, message: 'Medya yeniden import edilemedi' });
+    }
+
+    // Yeni eklenen projectItem'i bul (excludeItem = null — en son import'u al)
+    var newProjItem = findMostRecentImport(firstMediaPath, null);
+    if (!newProjItem) {
+      return JSON.stringify({ ok: false, message: 'Yeniden import edilen projectItem bulunamadi' });
+    }
+
+    // Yeni sekans olustur
+    var srcSettings = srcSeq.getSettings();
+    var timestamp = new Date().getTime();
+    var newSeqName = 'TalkyClip_' + timestamp;
+
+    var newSeq = app.project.createNewSequence(newSeqName, '');
+    if (!newSeq) {
+      return JSON.stringify({ ok: false, message: 'Yeni sekans olusturulamadi' });
+    }
+
+    try {
+      newSeq.setSettings(srcSettings);
+    } catch (settingsErr) {
+      // Kritik degil
+    }
+
+    var newV1 = newSeq.videoTracks[0];
+    if (!newV1) {
+      return JSON.stringify({ ok: false, message: 'Yeni sekans V1 track yok' });
+    }
+
+    // Her interval'i sirayla yapistir — ham medya pozisyonlari kullanilarak
+    var TICKS_PER_SEC = 254016000000;
+    var insertionTicks = 0;
+    var inT = new Time();
+    var outT = new Time();
+    var insertionTime = new Time();
+    var placed = 0;
+
+    for (var i = 0; i < intervals.length; i++) {
+      var srcStart = intervals[i].srcStart;
+      var srcEnd   = intervals[i].srcEnd;
+      var durSec   = srcEnd - srcStart;
+
+      if (durSec <= 0) continue;
+
+      inT.ticks = Math.round(srcStart * TICKS_PER_SEC).toString();
+      outT.ticks = Math.round(srcEnd   * TICKS_PER_SEC).toString();
+
+      newProjItem.setInPoint(inT, 4);
+      newProjItem.setOutPoint(outT, 4);
+
+      insertionTime.ticks = insertionTicks.toString();
+      newV1.overwriteClip(newProjItem, insertionTime);
+
+      // Frame rounding gap'lerini onle
+      var clipsCount = newV1.clips.numItems;
+      if (clipsCount > 0) {
+        var lastClip = newV1.clips[clipsCount - 1];
+        if (lastClip && lastClip.end && lastClip.end.ticks) {
+          insertionTicks = parseInt(lastClip.end.ticks, 10);
+        } else {
+          insertionTicks = insertionTicks + Math.round(durSec * TICKS_PER_SEC);
+        }
+      } else {
+        insertionTicks = insertionTicks + Math.round(durSec * TICKS_PER_SEC);
+      }
+
+      placed = placed + 1;
+    }
+
+    // Yeni projectItem'in in/out'unu sifirla
+    try {
+      var resetIn = new Time();
+      resetIn.ticks = '0';
+      newProjItem.setInPoint(resetIn, 4);
+      var resetOut = new Time();
+      resetOut.ticks = (TICKS_PER_SEC * 99999).toString();
+      newProjItem.setOutPoint(resetOut, 4);
+    } catch (resetErr) {
+      // Kritik degil
+    }
+
+    return JSON.stringify({
+      ok: true,
+      newSequenceName: newSeqName,
+      segmentsPlaced: placed
+    });
+
+  } catch (e) {
+    return JSON.stringify({ ok: false, message: 'Hata: ' + e.toString() });
+  }
 }
 
 function jumpCutTest() {

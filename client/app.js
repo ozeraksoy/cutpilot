@@ -23,6 +23,7 @@ const state = {
   clipInfo:     null,
   segments:     [],        // { start, end, text, translated? }
   words:        [],        // { word, start, end } — word-level timestamps for Jump Cut
+  lastJumpCut:  null,      // { sequenceName, speechIntervals } — resync icin
   ffmpegPath:   'ffmpeg',
   ffmpegOK:     false,
   isProcessing: false,
@@ -358,7 +359,17 @@ async function transcribeClip(clip, progressStart, progressEnd) {
     }
 
     if (whisperResult.words && Array.isArray(whisperResult.words) && whisperResult.words.length > 0) {
-      state.words = state.words.concat(whisperResult.words);
+      const enrichedWords = whisperResult.words.map(w => ({
+        word:      w.word,
+        start:     w.start,
+        end:       w.end,
+        srcStart:  clip.inPoint + w.start,   // ham medyada gercek pozisyon
+        srcEnd:    clip.inPoint + w.end,
+        mediaPath: clip.mediaPath,
+        seqStart:  w.start,                  // single-clip default (batch override eder)
+        seqEnd:    w.end
+      }));
+      state.words = state.words.concat(enrichedWords);
     }
 
     return whisperResult.segments.map(seg => ({
@@ -383,6 +394,8 @@ async function transcribeBatch(clips) {
 
     setProgress(pStart, `Klip ${i + 1}/${clips.length}: ${clip.name ? clip.name.substring(0, 25) : ''}`);
 
+    const wordsBefore = state.words.length;
+
     try {
       const segments = await transcribeClip(clip, pStart, pEnd);
       segments.forEach(seg => {
@@ -392,6 +405,13 @@ async function transcribeBatch(clips) {
           text:  seg.text
         });
       });
+
+      // Bu klipten gelen word'lere sequence pozisyonunu yaz (transcribeClip default'unu override et)
+      for (let wi = wordsBefore; wi < state.words.length; wi++) {
+        state.words[wi].seqStart = state.words[wi].start + cumulativeOffset;
+        state.words[wi].seqEnd   = state.words[wi].end   + cumulativeOffset;
+      }
+
       cumulativeOffset += clip.duration;
     } catch (err) {
       // Hatalı klibi atla, devam et — süreyi yine de say
@@ -696,8 +716,58 @@ function translateSegments(segments, targetLang, apiKey) {
 }
 
 // ── SRT Üretimi ────────────────────────────────────────────────────────────────
-function generateSRT(useTranslation) {
-  return state.segments.map((seg, idx) => {
+async function getActiveSequenceName() {
+  return new Promise((resolve) => {
+    if (!csInterface) { resolve(''); return; }
+    csInterface.evalScript(
+      "(function(){ try { var s = app.project.activeSequence; return s ? s.name : ''; } catch(e) { return ''; } })()",
+      function(result) { resolve(result || ''); }
+    );
+  });
+}
+
+function remapSegmentsForJumpCut(segments, speechIntervals) {
+  let cumulative = 0;
+  const enrichedIntervals = speechIntervals.map(iv => {
+    const newStart = cumulative;
+    const newEnd = cumulative + (iv.end - iv.start);
+    cumulative = newEnd;
+    return { start: iv.start, end: iv.end, newStart, newEnd };
+  });
+
+  function remapTime(originalSec) {
+    for (const iv of enrichedIntervals) {
+      if (originalSec >= iv.start && originalSec <= iv.end) {
+        return iv.newStart + (originalSec - iv.start);
+      }
+    }
+    for (const iv of enrichedIntervals) {
+      if (originalSec < iv.start) return iv.newStart;
+    }
+    return cumulative;
+  }
+
+  return segments.map(seg => ({
+    ...seg,
+    start: remapTime(seg.start),
+    end: remapTime(seg.end)
+  }));
+}
+
+async function generateSRT(useTranslation) {
+  let segments = state.segments;
+
+  if (state.lastJumpCut && state.lastJumpCut.speechIntervals && state.lastJumpCut.speechIntervals.length > 0) {
+    const activeName = await getActiveSequenceName();
+    if (activeName === state.lastJumpCut.sequenceName) {
+      console.log('Resyncing segments for Jump Cut sequence:', activeName);
+      segments = remapSegmentsForJumpCut(state.segments, state.lastJumpCut.speechIntervals);
+    } else {
+      console.log('Active sequence is original, using original timing');
+    }
+  }
+
+  return segments.map((seg, idx) => {
     const text = useTranslation && seg.translated ? seg.translated : seg.text;
     return `${idx + 1}\n${srtTime(seg.start)} --> ${srtTime(seg.end)}\n${text.trim()}\n`;
   }).join('\n');
@@ -716,12 +786,12 @@ function pad(n, len = 2) {
 }
 
 // ── SRT Kaydet ────────────────────────────────────────────────────────────────
-function saveSRT() {
+async function saveSRT() {
   if (!state.segments.length) { showError('Kaydedilecek transkripsiyon yok.'); return; }
   if (!fs || !path)           { showError('Dosya sistemi erişimi yok.'); return; }
 
   const useTranslation = document.querySelector('input[name="exportContent"]:checked').value === 'translated';
-  const srtContent = generateSRT(useTranslation);
+  const srtContent = await generateSRT(useTranslation);
 
   // Çıktı yolu: kaynak video ile aynı klasör (batch'de ilk klibin klasörü)
   const refClip = state.batchMode && state.batchClips.length > 0 ? state.batchClips[0] : state.clipInfo;
@@ -748,13 +818,13 @@ function saveSRT() {
 }
 
 // ── Premiere Pro'ya İçe Aktar ─────────────────────────────────────────────────
-function importToPremiere() {
+async function importToPremiere() {
   if (!state.segments.length)  { showError('İçe aktarılacak transkripsiyon yok.'); return; }
   if (!csInterface)            { showError('Premiere Pro bağlantısı yok.'); return; }
   if (!fs || !path || !os)     { showError('Dosya sistemi erişimi yok.'); return; }
 
   const useTranslation = document.querySelector('input[name="exportContent"]:checked').value === 'translated';
-  const srtContent = generateSRT(useTranslation);
+  const srtContent = await generateSRT(useTranslation);
 
   // Geçici SRT dosyası oluştur
   const tmpPath = path.join(os.tmpdir(), 'talky_import_' + Date.now() + '.srt');
@@ -900,28 +970,30 @@ document.getElementById('jumpCutTestBtn').addEventListener('click', function() {
   }
 
   const minSilenceSec = 0.3;
+
+  // Sessizlikleri sequence pozisyonlarina gore tespit et
   const silences = [];
 
-  if (state.words[0].start > minSilenceSec) {
+  if (state.words[0].seqStart > minSilenceSec) {
     silences.push({
-      start: 0,
-      end: state.words[0].start,
-      duration: state.words[0].start
+      seqStart: 0,
+      seqEnd: state.words[0].seqStart,
+      duration: state.words[0].seqStart
     });
   }
 
   for (let i = 0; i < state.words.length - 1; i++) {
-    const gap = state.words[i + 1].start - state.words[i].end;
+    const gap = state.words[i + 1].seqStart - state.words[i].seqEnd;
     if (gap > minSilenceSec) {
       silences.push({
-        start: state.words[i].end,
-        end: state.words[i + 1].start,
+        seqStart: state.words[i].seqEnd,
+        seqEnd:   state.words[i + 1].seqStart,
         duration: gap
       });
     }
   }
 
-  console.log('Jump Cut: Found', silences.length, 'silences', silences);
+  console.log('Jump Cut: Found', silences.length, 'silences (seq-relative)', silences);
 
   if (silences.length === 0) {
     alert('Hic sessizlik tespit edilmedi.');
@@ -930,40 +1002,70 @@ document.getElementById('jumpCutTestBtn').addEventListener('click', function() {
 
   const totalCut = silences.reduce((sum, s) => sum + s.duration, 0);
 
-  // Konusma araliklari = silence'lerin tersi
+  // Speech interval'lari seq pozisyonlarinda hesapla
   const speechIntervals = [];
   let cursor = 0;
   for (let i = 0; i < silences.length; i++) {
-    if (silences[i].start > cursor) {
-      speechIntervals.push({ start: cursor, end: silences[i].start });
+    if (silences[i].seqStart > cursor) {
+      speechIntervals.push({ seqStart: cursor, seqEnd: silences[i].seqStart });
     }
-    cursor = silences[i].end;
+    cursor = silences[i].seqEnd;
   }
-  const lastWordEnd = state.words[state.words.length - 1].end;
-  if (cursor < lastWordEnd) {
-    speechIntervals.push({ start: cursor, end: lastWordEnd });
+  const lastWordSeqEnd = state.words[state.words.length - 1].seqEnd;
+  if (cursor < lastWordSeqEnd) {
+    speechIntervals.push({ seqStart: cursor, seqEnd: lastWordSeqEnd });
   }
 
-  console.log('Jump Cut: Speech intervals to keep', speechIntervals);
+  // Her speech interval'i ham medya pozisyonlarina cevir
+  const enrichedIntervals = speechIntervals.map(iv => {
+    const wordsInInterval = state.words.filter(w =>
+      w.seqEnd >= iv.seqStart && w.seqStart <= iv.seqEnd
+    );
 
-  const confirmMsg = silences.length + ' sessizlik tespit edildi (toplam ' +
-                     totalCut.toFixed(2) + 'sn kesilecek).\n' +
-                     speechIntervals.length + ' konusma araligi yapistirilacak.\n\n' +
-                     'Yeni sekans olusturulsun mu?\n' +
-                     '(Mevcut sekansiniz korunacak — orijinal medya yeniden import edilecek)';
+    if (wordsInInterval.length === 0) return null;
 
-  if (!confirm(confirmMsg)) {
+    const firstMediaPath = wordsInInterval[0].mediaPath;
+    const allSameMedia = wordsInInterval.every(w => w.mediaPath === firstMediaPath);
+    if (!allSameMedia) {
+      console.warn('Speech interval birden fazla medya kapsayor — desteklenmiyor', iv);
+      return null;
+    }
+
+    const firstWord = wordsInInterval[0];
+    const lastWord  = wordsInInterval[wordsInInterval.length - 1];
+    const srcStart  = firstWord.srcStart - (firstWord.seqStart - iv.seqStart);
+    const srcEnd    = lastWord.srcEnd    + (iv.seqEnd - lastWord.seqEnd);
+
+    return { mediaPath: firstMediaPath, srcStart, srcEnd, duration: srcEnd - srcStart };
+  }).filter(iv => iv !== null);
+
+  console.log('Jump Cut: Enriched intervals (src-relative)', enrichedIntervals);
+
+  if (enrichedIntervals.length === 0) {
+    alert('Hicbir gecerli konusma araligi olusturulamadi.');
     return;
   }
 
-  const paramsJSON = JSON.stringify({ speechIntervals: speechIntervals });
+  const confirmMsg = silences.length + ' sessizlik tespit edildi (toplam ' +
+                     totalCut.toFixed(2) + 'sn kesilecek).\n' +
+                     enrichedIntervals.length + ' konusma araligi yapistirilacak.\n\n' +
+                     'Yeni sekans olusturulsun mu?';
+
+  if (!confirm(confirmMsg)) return;
+
+  const paramsJSON = JSON.stringify({ enrichedIntervals: enrichedIntervals });
   const escapedJSON = paramsJSON.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
-  csInterface.evalScript("applyJumpCutsFromIntervalsV2('" + escapedJSON + "')", function(result) {
+  csInterface.evalScript("applyJumpCutsFromIntervalsV3('" + escapedJSON + "')", function(result) {
     console.log('Host returned:', result);
     try {
       const data = JSON.parse(result);
       if (data.ok) {
+        state.lastJumpCut = {
+          sequenceName: data.newSequenceName,
+          speechIntervals: speechIntervals.map(iv => ({ start: iv.seqStart, end: iv.seqEnd }))
+        };
+        console.log('Saved lastJumpCut for resync:', state.lastJumpCut);
         alert('Yeni sekans olusturuldu: ' + data.newSequenceName + '\n' +
               'Yapistirilan segment sayisi: ' + data.segmentsPlaced);
       } else {
