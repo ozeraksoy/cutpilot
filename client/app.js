@@ -34,37 +34,38 @@ const state = {
 };
 
 // ── AI Shorts Prompt ──────────────────────────────────────────────────────────
-const VIRAL_ANALYSIS_PROMPT = `Sen bir sosyal medya editorisin ve YouTube/Instagram/TikTok icin viral kisa video parcalari secmekte uzmansin.
+const VIRAL_ANALYSIS_PROMPT = `Sen bir sosyal medya editorisin. YouTube/Instagram/TikTok icin viral kisa video parcalari secmekte uzmansin.
 
-Sana asagida bir uzun videonun transkripti verilecek. Her satir bir konusma segmentidir, basinda zaman damgasi var.
+Asagida bir uzun videonun transkripti var. Her satir bir konusma segmentidir, basinda zaman damgasi var.
 
-GOREV: Bu transkriptten {COUNT} adet VIRAL POTANSIYELI YUKSEK parca sec.
+GOREV: Bu transkriptten {COUNT} adet viral potansiyeli yuksek parca sec.
 
-ZORUNLU SURE KURALI:
-- Her parca {MIN_DUR}-{MAX_DUR} SANIYE arasi olmak ZORUNDA
-- {MIN_DUR}sn'den kisa parcalar KESINLIKLE secilemez - bu kural ihlal edilemez
-- Tek bir transkript segmenti yeterli degilse, ARDISIK BIRDEN FAZLA SEGMENTI BIRLESTIR
-- Ornek: 3sn'lik segment yeterli degildir; ama 3+4+5=12sn de yeterli degildir; 3+4+5+8=20sn yeterlidir
-- startSec = ilk birlestirilen segmentin start'i
-- endSec = son birlestirilen segmentin end'i
+ZORUNLU SURE KURALI - IHLAL EDILEMEZ:
+- Her parca {MIN_DUR}-{MAX_DUR} SANIYE arasinda olmak ZORUNDA
+- Yani: endSec - startSec >= {MIN_DUR} ve endSec - startSec <= {MAX_DUR}
+- {MIN_DUR}sn'den kisa parca SECMEK YASAKTIR
+- Tek segment yetmiyorsa, ardisik segmentleri BIRLESTIR
+- Her aday icin "endSec - startSec" hesabini yap, {MIN_DUR}'den kucukse o adayi atla
+- Eger {COUNT} adet bulamazsan, daha az ver - ama hepsi {MIN_DUR}+ olmak zorunda
 
 ICERIK KRITERLERI:
-- Hook ile baslamali - ilk 3 saniyede izleyiciyi yakalamali
-- Kendi basina anlamli olmali - onceki baglama ihtiyac duymamali
-- Net bir payoff veya sonuc olmali - bos yere uzatmamali
-- Su unsurlardan en az birini icermeli: ilginc bilgi, mizah, surpriz, duygusal an, pratik tavsiye, kontroversiyel goru
+- Hook ile baslamali (ilk 3sn'de izleyiciyi yakalamali)
+- Kendi basina anlamli olmali (onceki baglama ihtiyac duymadan)
+- Net bir payoff/sonuc olmali
+- Su unsurlardan en az biri: ilginc bilgi, mizah, surpriz, duygu, pratik tavsiye, ihtilafli goru
 
-OZELLIKLE KACINMASI GEREKEN:
-- "Bunu daha sonra anlatacagim" gibi yarim kalan kisimlar
-- Cok teknik veya niche kisimlar (genis kitleye hitap etmeli)
-- Sadece selamlasma veya kapanis kisimlari
-- Ardisik filler kelimeler ("yani yani sey ee...")
-- Tek cumlelik cok kisa parcalar (asagari {MIN_DUR}sn olmali)
+KACINILACAKLAR:
+- "Bunu sonra anlatacagim" tarzi yarim kalan parcalar
+- Cok teknik veya niche kisimlar
+- Sadece selamlasma/kapanis
+- Tek cumle/tek segment (sure yeter mi diye bak)
 
-CIKTI FORMATI (sadece JSON, baska aciklama yapma):
-{"shorts": [{"startSec": 45.32, "endSec": 78.45, "title": "Kisa basta basliki (max 60 karakter)", "hook": "Ilk cumlenin ozeti (max 100 karakter)", "reasoning": "Neden viral olabilir, kisa aciklama (max 200 karakter)", "tags": ["motivasyon", "girisimcilik", "ipucu"]}]}
+CIKTI: Sadece JSON, aciklama yok.
+{"shorts": [{"startSec": 45.32, "endSec": 78.45, "title": "Kisa basta basliki (max 60 karakter)", "hook": "Ilk cumlenin ozeti (max 100 karakter)", "reasoning": "Neden viral olabilir (max 200 karakter)", "tags": ["motivasyon", "ipucu"]}]}
 
-ONEMLI: endSec - startSec hesabi yap, sonuc {MIN_DUR}'den kucukse ardisik segmentleri ekleyerek genislet.
+KENDI KENDINE KONTROL:
+Sonuc olarak verilecek her aday icin endSec - startSec hesabi yap.
+Eger {MIN_DUR}'den kucuk veya {MAX_DUR}'den buyukse, o adayi DAHIL ETME.
 
 TRANSKRIPT:
 {TRANSCRIPT}
@@ -1229,9 +1230,10 @@ document.getElementById('viralAnalyzeBtn').addEventListener('click', async funct
     return;
   }
 
-  const targetCount = 5;
-  const minDuration = 20;
-  const maxDuration = 60;
+  const aiRequestCount = 10;  // AI'a fazladan iste
+  const targetCount = 5;       // Filtreleme sonrasi en iyi 5
+  const minDuration = 25;
+  const maxDuration = 90;
   const model = 'gpt-4o-mini';
 
   const transcriptText = state.segments.map(seg => {
@@ -1242,9 +1244,9 @@ document.getElementById('viralAnalyzeBtn').addEventListener('click', async funct
               transcriptText.length + ' karakter');
 
   const prompt = VIRAL_ANALYSIS_PROMPT
-    .replace('{COUNT}', targetCount)
-    .replace('{MIN_DUR}', minDuration)
-    .replace('{MAX_DUR}', maxDuration)
+    .replace(/{COUNT}/g, aiRequestCount)
+    .replace(/{MIN_DUR}/g, minDuration)
+    .replace(/{MAX_DUR}/g, maxDuration)
     .replace('{TRANSCRIPT}', transcriptText);
 
   const btn = document.getElementById('viralAnalyzeBtn');
@@ -1276,18 +1278,35 @@ document.getElementById('viralAnalyzeBtn').addEventListener('click', async funct
       return;
     }
 
-    state.viralCandidates = parsed.shorts;
+    console.log('Viral Analysis: AI gave', parsed.shorts.length, 'candidates');
+
+    const filteredShorts = parsed.shorts.filter(function(s) {
+      if (typeof s.startSec !== 'number' || typeof s.endSec !== 'number') return false;
+      const duration = s.endSec - s.startSec;
+      return duration >= minDuration && duration <= maxDuration;
+    });
+
+    console.log('Viral Analysis: After filter (' + minDuration + '-' + maxDuration + 'sn):', filteredShorts.length);
+
+    if (filteredShorts.length === 0) {
+      alert('AI ' + parsed.shorts.length + ' aday üretti ama hepsi süre filtresi dışında kaldı (' + minDuration + '-' + maxDuration + 'sn).\nConsole\'da ham sonuçları görebilirsiniz.');
+      console.log('Filtered out all candidates. Raw:', parsed.shorts);
+      return;
+    }
+
+    const finalShorts = filteredShorts.slice(0, targetCount);
+    state.viralCandidates = finalShorts;
 
     console.log('=== VIRAL CANDIDATES ===');
-    parsed.shorts.forEach((s, i) => {
+    finalShorts.forEach(function(s, i) {
       console.log((i + 1) + '. [' + s.startSec + '-' + s.endSec + 's] ' + s.title);
       console.log('   Hook: ' + s.hook);
       console.log('   Reason: ' + s.reasoning);
       if (s.tags) console.log('   Tags: ' + s.tags.join(', '));
     });
 
-    let summary = parsed.shorts.length + ' viral aday tespit edildi (' + elapsed + 'sn)\n\n';
-    parsed.shorts.forEach((s, i) => {
+    let summary = finalShorts.length + ' viral aday tespit edildi (' + elapsed + 'sn)\n\n';
+    finalShorts.forEach(function(s, i) {
       const dur = (s.endSec - s.startSec).toFixed(1);
       summary += (i + 1) + '. ' + s.title + ' (' + dur + 'sn)\n';
     });
