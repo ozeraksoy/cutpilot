@@ -24,6 +24,7 @@ const state = {
   segments:     [],        // { start, end, text, translated? }
   words:        [],        // { word, start, end } — word-level timestamps for Jump Cut
   lastJumpCut:  null,      // { sequenceName, speechIntervals } — resync icin
+  viralCandidates: [],    // AI'in tespit ettigi viral parcalar (Adim 6b'de kullanilacak)
   ffmpegPath:   'ffmpeg',
   ffmpegOK:     false,
   isProcessing: false,
@@ -31,6 +32,33 @@ const state = {
   batchMode:    false,
   batchClips:   []
 };
+
+// ── AI Shorts Prompt ──────────────────────────────────────────────────────────
+const VIRAL_ANALYSIS_PROMPT = `Sen bir sosyal medya editorisin ve YouTube/Instagram/TikTok icin viral kisa video parcalari secmekte uzmansin.
+
+Sana asagida bir uzun videonun transkripti verilecek. Her satir bir konusma segmentidir, basinda zaman damgasi var.
+
+GOREV: Bu transkriptten {COUNT} adet VIRAL POTANSIYELI YUKSEK parca sec.
+
+Her parca su kriterleri saglamali:
+- Sure: {MIN_DUR}-{MAX_DUR} saniye arasi
+- Hook ile baslamali - ilk 3 saniyede izleyiciyi yakalamali
+- Kendi basina anlamli olmali - onceki baglama ihtiyac duymamali
+- Net bir payoff veya sonuc olmali
+- Su unsurlardan en az birini icermeli: ilginc bilgi, mizah, surpriz, duygusal an, pratik tavsiye, kontroversiyel gorus
+
+OZELLIKLE KACINMASI GEREKEN:
+- Yarim kalan kisimlar
+- Cok teknik veya niche kisimlar
+- Sadece selamlasma veya kapanis kisimlari
+- Ardisik filler kelimeler
+
+CIKTI FORMATI (sadece JSON, baska aciklama yapma):
+{"shorts": [{"startSec": 45.32, "endSec": 78.45, "title": "Baslik (max 60 karakter)", "hook": "Ilk cumle ozeti (max 100 karakter)", "reasoning": "Neden viral olabilir (max 200 karakter)", "tags": ["etiket1", "etiket2"]}]}
+
+TRANSKRIPT:
+{TRANSCRIPT}
+`;
 
 // ── Filler Word Detection ─────────────────────────────────────────────────────
 const FILLER_WORDS = [
@@ -728,6 +756,59 @@ function translateSegments(segments, targetLang, apiKey) {
   });
 }
 
+// ── OpenAI Chat Helper ────────────────────────────────────────────────────────
+function callOpenAIChat(prompt, model, apiKey) {
+  return new Promise((resolve, reject) => {
+    if (!https) { reject(new Error('Node.js https modulu erisemiyor.')); return; }
+
+    const requestBody = JSON.stringify({
+      model: model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_tokens: 4096,
+      response_format: { type: 'json_object' }
+    });
+
+    const options = {
+      hostname: 'api.openai.com',
+      port: 443,
+      path: '/v1/chat/completions',
+      method: 'POST',
+      headers: {
+        'Content-Type':   'application/json',
+        'Authorization':  'Bearer ' + apiKey,
+        'Content-Length': Buffer.byteLength(requestBody)
+      },
+      timeout: 60000
+    };
+
+    const req = https.request(options, (res) => {
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed.error) {
+            reject(new Error('OpenAI API: ' + parsed.error.message)); return;
+          }
+          if (!parsed.choices || !parsed.choices[0] || !parsed.choices[0].message) {
+            reject(new Error('OpenAI API: gecersiz cevap formati')); return;
+          }
+          resolve(parsed.choices[0].message.content);
+        } catch (e) {
+          reject(new Error('OpenAI API parse hatasi: ' + e.message));
+        }
+      });
+    });
+
+    req.on('error', err => reject(err));
+    req.on('timeout', () => { req.destroy(); reject(new Error('OpenAI API zaman asimina ugradi.')); });
+    req.write(requestBody);
+    req.end();
+  });
+}
+
 // ── SRT Üretimi ────────────────────────────────────────────────────────────────
 async function getActiveSequenceName() {
   return new Promise((resolve) => {
@@ -1125,4 +1206,89 @@ document.getElementById('jumpCutTestBtn').addEventListener('click', function() {
       alert('Parse hatasi: ' + result);
     }
   });
+});
+
+// ── AI Viral Analiz Handler ───────────────────────────────────────────────────
+document.getElementById('viralAnalyzeBtn').addEventListener('click', async function() {
+  if (!state.segments || state.segments.length === 0) {
+    alert('Once transkripsiyon yapin.');
+    return;
+  }
+  if (!state.apiKey) {
+    alert('OpenAI API anahtari girilmedi. Ayarlardan ekleyin.');
+    return;
+  }
+
+  const targetCount = 5;
+  const minDuration = 20;
+  const maxDuration = 60;
+  const model = 'gpt-4o-mini';
+
+  const transcriptText = state.segments.map(seg => {
+    return '[' + seg.start.toFixed(2) + 's-' + seg.end.toFixed(2) + 's] ' + seg.text;
+  }).join('\n');
+
+  console.log('Viral Analysis: ' + state.segments.length + ' segment, ' +
+              transcriptText.length + ' karakter');
+
+  const prompt = VIRAL_ANALYSIS_PROMPT
+    .replace('{COUNT}', targetCount)
+    .replace('{MIN_DUR}', minDuration)
+    .replace('{MAX_DUR}', maxDuration)
+    .replace('{TRANSCRIPT}', transcriptText);
+
+  const btn = document.getElementById('viralAnalyzeBtn');
+  const originalText = btn.textContent;
+  btn.textContent = 'AI dusunuyor... (10-30sn)';
+  btn.disabled = true;
+
+  try {
+    const startTime = Date.now();
+    const response = await callOpenAIChat(prompt, model, state.apiKey);
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+    console.log('Viral Analysis: Cevap alindi (' + elapsed + 'sn)');
+    console.log('Raw response:', response);
+
+    let parsed;
+    try {
+      const cleaned = response.replace(/^```(json)?\s*/i, '').replace(/\s*```$/, '').trim();
+      parsed = JSON.parse(cleaned);
+    } catch (parseErr) {
+      console.error('JSON parse hatasi:', parseErr);
+      alert('AI cevabi JSON formatinda degil. Console kontrol edin.\n\n' + response.substring(0, 200));
+      return;
+    }
+
+    if (!parsed.shorts || !Array.isArray(parsed.shorts) || parsed.shorts.length === 0) {
+      alert('AI gecerli viral aday bulamadi. Console kontrol edin.');
+      console.log('Parsed but no shorts:', parsed);
+      return;
+    }
+
+    state.viralCandidates = parsed.shorts;
+
+    console.log('=== VIRAL CANDIDATES ===');
+    parsed.shorts.forEach((s, i) => {
+      console.log((i + 1) + '. [' + s.startSec + '-' + s.endSec + 's] ' + s.title);
+      console.log('   Hook: ' + s.hook);
+      console.log('   Reason: ' + s.reasoning);
+      if (s.tags) console.log('   Tags: ' + s.tags.join(', '));
+    });
+
+    let summary = parsed.shorts.length + ' viral aday tespit edildi (' + elapsed + 'sn)\n\n';
+    parsed.shorts.forEach((s, i) => {
+      const dur = (s.endSec - s.startSec).toFixed(1);
+      summary += (i + 1) + '. ' + s.title + ' (' + dur + 'sn)\n';
+    });
+    summary += '\nDetaylar console\'da.';
+    alert(summary);
+
+  } catch (err) {
+    console.error('Viral Analysis hatasi:', err);
+    alert('Hata: ' + err.message);
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
 });
