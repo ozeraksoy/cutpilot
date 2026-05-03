@@ -51,6 +51,76 @@
     <h3 style="margin-top:16px">FFmpeg</h3>
     <div id="ffmpegStatus" class="ffmpeg-status" data-i18n="ffmpegStatusChecking">Kontrol ediliyor...</div>
     <p class="hint" id="ffmpegHint" style="display:none">FFmpeg gereklidir. README dosyasina bakin.</p>
+
+    <!-- Jump Cut Ayarlari -->
+    <div class="settings-section">
+      <h3 data-i18n="jumpCutSettingsTitle">Jump Cut Ayarlari</h3>
+
+      <div class="form-row-stacked">
+        <div class="form-row-label">
+          <label data-i18n="minSilenceLabel">Minimum Sessizlik</label>
+          <span class="caption mono" id="minSilenceValue">300ms</span>
+        </div>
+        <input type="range" id="minSilenceSlider" min="100" max="1000" step="50" value="300" class="slider">
+      </div>
+
+      <div class="form-row-stacked">
+        <div class="form-row-label">
+          <label data-i18n="fillerWordsLabel">Filler Kelimeler</label>
+          <button class="btn-tiny" id="resetFillersBtn" data-i18n="resetDefault">Varsayilan</button>
+        </div>
+        <div class="tag-input-wrap">
+          <div class="tag-list" id="fillerTagList"></div>
+          <input type="text" id="fillerTagInput" class="tag-input" placeholder="Kelime ekle, Enter">
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Shorts Ayarlari -->
+    <div class="settings-section">
+      <h3 data-i18n="aiShortsSettingsTitle">AI Shorts Ayarlari</h3>
+
+      <div class="form-row-stacked">
+        <label data-i18n="aiModelLabel">AI Modeli</label>
+        <div class="radio-row">
+          <label class="radio-pill" id="radioPillMini">
+            <input type="radio" name="aiModel" value="gpt-4o-mini" checked>
+            <span>gpt-4o-mini</span>
+            <span class="caption">hizli</span>
+          </label>
+          <label class="radio-pill" id="radioPill4o">
+            <input type="radio" name="aiModel" value="gpt-4o">
+            <span>gpt-4o</span>
+            <span class="caption">kaliteli</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-row-stacked">
+        <div class="form-row-label">
+          <label data-i18n="viralCountLabel">Aday Sayisi</label>
+          <span class="caption mono" id="viralCountValue">5</span>
+        </div>
+        <input type="range" id="viralCountSlider" min="3" max="15" step="1" value="5" class="slider">
+      </div>
+
+      <div class="form-row-stacked">
+        <div class="form-row-label">
+          <label data-i18n="viralDurationLabel">Sure Araligi</label>
+          <span class="caption mono" id="viralDurationValue">25-90sn</span>
+        </div>
+        <div class="dual-slider">
+          <input type="range" id="viralMinSlider" min="15" max="120" step="5" value="25" class="slider">
+          <input type="range" id="viralMaxSlider" min="15" max="120" step="5" value="90" class="slider">
+        </div>
+      </div>
+    </div>
+
+    <!-- Reset all -->
+    <button class="btn-secondary btn-sm" id="resetSettingsBtn" style="margin-top:16px; width:100%;">
+      <i data-lucide="rotate-ccw"></i>
+      <span data-i18n="resetAllSettings">Tum Ayarlari Sifirla</span>
+    </button>
   </div>
 
   <!-- Active Clip -->
@@ -247,6 +317,9 @@
       </div>
     </div>
     <p class="card-description" data-i18n="viralDescription">AI ile transkriptten viral parcalar bulup 9:16 sekanslara donusturur.</p>
+
+    <div id="viralCandidatesList" class="viral-list hidden"></div>
+
     <div class="btn-row">
       <button id="viralAnalyzeBtn" class="btn-secondary">
         <i data-lucide="search"></i>
@@ -254,7 +327,7 @@
       </button>
       <button id="generateViralBtn" class="btn-primary" disabled>
         <i data-lucide="sparkles"></i>
-        <span data-i18n="btnGenerateViral">Viral Sekanslari Olustur</span>
+        <span id="generateViralBtnText" data-i18n="btnGenerateViral">Viral Sekanslari Olustur</span>
       </button>
     </div>
   </section>

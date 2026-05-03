@@ -18,19 +18,35 @@ let csInterface = null;
 try { csInterface = new CSInterface(); } catch (e) {}
 
 // ── Uygulama Durumu ───────────────────────────────────────────────────────────
+const DEFAULT_FILLERS = [
+  'sey', 'ee', 'eee', 'ii', 'iii', 'aa', 'aaa', 'oo', 'ooo',
+  'hmm', 'mmm', 'hah', 'eh', 'ah',
+  'um', 'uh', 'umm', 'uhh', 'er', 'erm', 'mhm'
+];
+
+const DEFAULT_SETTINGS = {
+  minSilenceMs:      300,
+  fillerWords:       DEFAULT_FILLERS.slice(),
+  aiModel:           'gpt-4o-mini',
+  viralCount:        5,
+  viralMinDuration:  25,
+  viralMaxDuration:  90,
+};
+
 const state = {
   apiKey:       '',
   clipInfo:     null,
-  segments:     [],        // { start, end, text, translated? }
-  words:        [],        // { word, start, end } — word-level timestamps for Jump Cut
-  lastJumpCut:  null,      // { sequenceName, speechIntervals } — resync icin
-  viralCandidates: [],    // AI'in tespit ettigi viral parcalar (Adim 6b'de kullanilacak)
+  segments:     [],
+  words:        [],
+  lastJumpCut:  null,
+  viralCandidates: [],
   ffmpegPath:   'ffmpeg',
   ffmpegOK:     false,
   isProcessing: false,
   showTranslation: false,
   batchMode:    false,
-  batchClips:   []
+  batchClips:   [],
+  settings:     JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
 };
 
 // ── AI Shorts Prompt ──────────────────────────────────────────────────────────
@@ -81,7 +97,173 @@ const FILLER_WORDS = [
 function isFillerWord(word) {
   if (!word || typeof word !== 'string') return false;
   const cleaned = word.toLowerCase().replace(/[^\w]/g, '');
-  return FILLER_WORDS.indexOf(cleaned) !== -1;
+  return state.settings.fillerWords.indexOf(cleaned) !== -1;
+}
+
+// ── Settings Persistence ──────────────────────────────────────────────────────
+function loadSettings() {
+  try {
+    const saved = localStorage.getItem('cutpilot_settings');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      Object.assign(state.settings, parsed);
+      if (!Array.isArray(state.settings.fillerWords)) {
+        state.settings.fillerWords = DEFAULT_FILLERS.slice();
+      }
+    }
+  } catch (e) {
+    console.error('Settings load error:', e);
+  }
+  applySettingsToUI();
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem('cutpilot_settings', JSON.stringify(state.settings));
+  } catch (e) {
+    console.error('Settings save error:', e);
+  }
+}
+
+function resetSettings() {
+  state.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+  saveSettings();
+  applySettingsToUI();
+}
+
+function applySettingsToUI() {
+  const minSlider = document.getElementById('minSilenceSlider');
+  if (minSlider) {
+    minSlider.value = state.settings.minSilenceMs;
+    document.getElementById('minSilenceValue').textContent = state.settings.minSilenceMs + 'ms';
+  }
+
+  const countSlider = document.getElementById('viralCountSlider');
+  if (countSlider) {
+    countSlider.value = state.settings.viralCount;
+    document.getElementById('viralCountValue').textContent = state.settings.viralCount;
+  }
+
+  const minDurSlider = document.getElementById('viralMinSlider');
+  const maxDurSlider = document.getElementById('viralMaxSlider');
+  if (minDurSlider && maxDurSlider) {
+    minDurSlider.value = state.settings.viralMinDuration;
+    maxDurSlider.value = state.settings.viralMaxDuration;
+    document.getElementById('viralDurationValue').textContent =
+      state.settings.viralMinDuration + '-' + state.settings.viralMaxDuration + 'sn';
+  }
+
+  // AI model radio + radio-pill active class
+  document.querySelectorAll('input[name="aiModel"]').forEach(function(radio) {
+    radio.checked = (radio.value === state.settings.aiModel);
+    radio.closest('.radio-pill').classList.toggle('active', radio.checked);
+  });
+
+  renderFillerTags();
+}
+
+function renderFillerTags() {
+  const list = document.getElementById('fillerTagList');
+  if (!list) return;
+  list.innerHTML = '';
+
+  state.settings.fillerWords.forEach(function(word, idx) {
+    const tag = document.createElement('span');
+    tag.className = 'tag-pill';
+    tag.innerHTML = '<span>' + word + '</span>' +
+                    '<button data-tag-idx="' + idx + '" title="Remove">' +
+                    '<i data-lucide="x"></i>' +
+                    '</button>';
+    list.appendChild(tag);
+  });
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+
+  list.querySelectorAll('button[data-tag-idx]').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const idx = parseInt(btn.dataset.tagIdx, 10);
+      state.settings.fillerWords.splice(idx, 1);
+      saveSettings();
+      renderFillerTags();
+    });
+  });
+}
+
+function initSettingsHandlers() {
+  document.getElementById('minSilenceSlider').addEventListener('input', function(e) {
+    state.settings.minSilenceMs = parseInt(e.target.value, 10);
+    document.getElementById('minSilenceValue').textContent = state.settings.minSilenceMs + 'ms';
+    saveSettings();
+  });
+
+  document.getElementById('viralCountSlider').addEventListener('input', function(e) {
+    state.settings.viralCount = parseInt(e.target.value, 10);
+    document.getElementById('viralCountValue').textContent = state.settings.viralCount;
+    saveSettings();
+  });
+
+  document.getElementById('viralMinSlider').addEventListener('input', function(e) {
+    let val = parseInt(e.target.value, 10);
+    // Push max up if needed — max always stays at least 5sn above min
+    if (val >= state.settings.viralMaxDuration) {
+      state.settings.viralMaxDuration = val + 5;
+      document.getElementById('viralMaxSlider').value = state.settings.viralMaxDuration;
+    }
+    state.settings.viralMinDuration = val;
+    document.getElementById('viralDurationValue').textContent =
+      state.settings.viralMinDuration + '-' + state.settings.viralMaxDuration + 'sn';
+    saveSettings();
+  });
+
+  document.getElementById('viralMaxSlider').addEventListener('input', function(e) {
+    let val = parseInt(e.target.value, 10);
+    // Push min down if needed — min always stays at least 5sn below max
+    if (val <= state.settings.viralMinDuration) {
+      state.settings.viralMinDuration = val - 5;
+      document.getElementById('viralMinSlider').value = state.settings.viralMinDuration;
+    }
+    state.settings.viralMaxDuration = val;
+    document.getElementById('viralDurationValue').textContent =
+      state.settings.viralMinDuration + '-' + state.settings.viralMaxDuration + 'sn';
+    saveSettings();
+  });
+
+  document.querySelectorAll('input[name="aiModel"]').forEach(function(radio) {
+    radio.addEventListener('change', function(e) {
+      state.settings.aiModel = e.target.value;
+      // Update active class on all radio-pill labels
+      document.querySelectorAll('input[name="aiModel"]').forEach(function(r) {
+        r.closest('.radio-pill').classList.toggle('active', r.checked);
+      });
+      saveSettings();
+    });
+  });
+
+  document.getElementById('fillerTagInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const word = e.target.value.trim().toLowerCase().replace(/[^\w]/g, '');
+      if (word && state.settings.fillerWords.indexOf(word) === -1) {
+        state.settings.fillerWords.push(word);
+        saveSettings();
+        renderFillerTags();
+        e.target.value = '';
+      }
+    }
+  });
+
+  document.getElementById('resetFillersBtn').addEventListener('click', function() {
+    state.settings.fillerWords = DEFAULT_FILLERS.slice();
+    saveSettings();
+    renderFillerTags();
+  });
+
+  document.getElementById('resetSettingsBtn').addEventListener('click', function() {
+    if (confirm(t('settingsResetConfirm'))) {
+      resetSettings();
+    }
+  });
 }
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
@@ -120,6 +302,28 @@ const i18n = {
     versionText: 'Cutpilot v1.0',
     processing: 'Isleniyor...',
     aiThinking: 'AI dusunuyor...',
+    viralListHeader: 'Viral Aday',
+    selectAll: 'TUMUNU SEC',
+    deselectAll: 'TUMUNU KALDIR',
+    showReasoning: 'Detay',
+    hideReasoning: 'Gizle',
+    btnGenerateSelected: 'Secilenleri Olustur',
+    btnGenerateAll: 'Hepsini Olustur',
+    viralResultTitle: 'Sekanslar olusturuldu',
+    viralResultDescription: 'Project panelinde bulabilirsiniz.',
+    jumpCutResultTitle: 'Jump Cut tamamlandi',
+    analyzingTranscript: 'Transkript analiz ediliyor...',
+    jumpCutSettingsTitle: 'Jump Cut Ayarlari',
+    minSilenceLabel: 'Minimum Sessizlik',
+    fillerWordsLabel: 'Filler Kelimeler',
+    resetDefault: 'Varsayilan',
+    addFillerPlaceholder: 'Kelime ekle, Enter',
+    aiShortsSettingsTitle: 'AI Shorts Ayarlari',
+    aiModelLabel: 'AI Modeli',
+    viralCountLabel: 'Aday Sayisi',
+    viralDurationLabel: 'Sure Araligi',
+    resetAllSettings: 'Tum Ayarlari Sifirla',
+    settingsResetConfirm: 'Tum ayarlar varsayilana donsun mu?',
   },
   en: {
     appTagline: 'AI editing copilot',
@@ -155,6 +359,28 @@ const i18n = {
     versionText: 'Cutpilot v1.0',
     processing: 'Processing...',
     aiThinking: 'AI thinking...',
+    viralListHeader: 'Viral Candidate',
+    selectAll: 'SELECT ALL',
+    deselectAll: 'DESELECT ALL',
+    showReasoning: 'Details',
+    hideReasoning: 'Hide',
+    btnGenerateSelected: 'Create Selected',
+    btnGenerateAll: 'Create All',
+    viralResultTitle: 'Sequences created',
+    viralResultDescription: 'Find them in your project panel.',
+    jumpCutResultTitle: 'Jump Cut completed',
+    analyzingTranscript: 'Analyzing transcript...',
+    jumpCutSettingsTitle: 'Jump Cut Settings',
+    minSilenceLabel: 'Minimum Silence',
+    fillerWordsLabel: 'Filler Words',
+    resetDefault: 'Default',
+    addFillerPlaceholder: 'Add word, Enter',
+    aiShortsSettingsTitle: 'AI Shorts Settings',
+    aiModelLabel: 'AI Model',
+    viralCountLabel: 'Candidate Count',
+    viralDurationLabel: 'Duration Range',
+    resetAllSettings: 'Reset All Settings',
+    settingsResetConfirm: 'Reset all settings to defaults?',
   }
 };
 
@@ -181,6 +407,25 @@ function applyTranslations() {
       el.textContent = text;
     }
   });
+  const viralList = document.getElementById('viralCandidatesList');
+  if (viralList && !viralList.classList.contains('hidden')) {
+    updateGenerateButton();
+  }
+}
+
+function openURL(url) {
+  if (cp) {
+    const platform = (typeof process !== 'undefined') ? process.platform : 'darwin';
+    if (platform === 'win32') {
+      cp.exec('start "" "' + url + '"');
+    } else if (platform === 'linux') {
+      cp.exec('xdg-open "' + url + '"');
+    } else {
+      cp.exec('open "' + url + '"');
+    }
+  } else if (csInterface) {
+    csInterface.openURLInDefaultBrowser(url);
+  }
 }
 
 function updateSectionVisibility() {
@@ -218,9 +463,14 @@ function init() {
   document.getElementById('btnDismissError').addEventListener('click', hideError);
   document.getElementById('btnShowOriginal').addEventListener('click', () => showView('original'));
   document.getElementById('btnShowTranslated').addEventListener('click', () => showView('translated'));
-  document.getElementById('linkOpenAI').addEventListener('click', (e) => {
+  document.getElementById('linkOpenAI').addEventListener('click', function(e) {
     e.preventDefault();
-    if (csInterface) csInterface.openURLInDefaultBrowser('https://platform.openai.com/api-keys');
+    openURL('https://platform.openai.com/api-keys');
+  });
+
+  document.getElementById('coffeeLink').addEventListener('click', function(e) {
+    e.preventDefault();
+    openURL('https://buymeacoffee.com/ozeraksoy');
   });
 
   // i18n
@@ -231,6 +481,8 @@ function init() {
   }
   applyTranslations();
   if (typeof lucide !== 'undefined') lucide.createIcons();
+  loadSettings();
+  initSettingsHandlers();
 }
 
 // ── Ayarlar ───────────────────────────────────────────────────────────────────
@@ -1189,7 +1441,7 @@ document.getElementById('jumpCutTestBtn').addEventListener('click', function() {
     return;
   }
 
-  const minSilenceSec = 0.3;
+  const minSilenceSec = state.settings.minSilenceMs / 1000;
   const fillerCount = { count: 0 };
 
   // Sessizlikleri sequence pozisyonlarina gore tespit et
@@ -1323,12 +1575,21 @@ document.getElementById('jumpCutTestBtn').addEventListener('click', function() {
           speechIntervals: speechIntervals.map(iv => ({ start: iv.seqStart, end: iv.seqEnd }))
         };
         console.log('Saved lastJumpCut for resync:', state.lastJumpCut);
-        alert('Yeni sekans olusturuldu: ' + data.newSequenceName + '\n' +
-              'Yapistirilan segment sayisi: ' + data.segmentsPlaced);
+        showResultPanel('jumpCut', {
+          success: true,
+          title: t('jumpCutResultTitle'),
+          description: data.newSequenceName,
+          items: [data.segmentsPlaced + ' segment yapistirildi']
+        });
       } else {
-        alert('Hata: ' + data.message);
+        showResultPanel('jumpCut', {
+          success: false,
+          title: 'Hata',
+          description: data.message
+        });
       }
     } catch (e) {
+      console.error('Jump Cut parse error:', e);
       alert('Parse hatasi: ' + result);
     }
   });
@@ -1345,11 +1606,11 @@ document.getElementById('viralAnalyzeBtn').addEventListener('click', async funct
     return;
   }
 
-  const aiRequestCount = 10;  // AI'a fazladan iste
-  const targetCount = 5;       // Filtreleme sonrasi en iyi 5
-  const minDuration = 25;
-  const maxDuration = 90;
-  const model = 'gpt-4o-mini';
+  const targetCount = state.settings.viralCount;
+  const aiRequestCount = targetCount + 5;
+  const minDuration = state.settings.viralMinDuration;
+  const maxDuration = state.settings.viralMaxDuration;
+  const model = state.settings.aiModel;
 
   const transcriptText = state.segments.map(seg => {
     return '[' + seg.start.toFixed(2) + 's-' + seg.end.toFixed(2) + 's] ' + seg.text;
@@ -1411,7 +1672,6 @@ document.getElementById('viralAnalyzeBtn').addEventListener('click', async funct
 
     const finalShorts = filteredShorts.slice(0, targetCount);
     state.viralCandidates = finalShorts;
-    document.getElementById('generateViralBtn').disabled = false;
 
     console.log('=== VIRAL CANDIDATES ===');
     finalShorts.forEach(function(s, i) {
@@ -1421,13 +1681,7 @@ document.getElementById('viralAnalyzeBtn').addEventListener('click', async funct
       if (s.tags) console.log('   Tags: ' + s.tags.join(', '));
     });
 
-    let summary = finalShorts.length + ' viral aday tespit edildi (' + elapsed + 'sn)\n\n';
-    finalShorts.forEach(function(s, i) {
-      const dur = (s.endSec - s.startSec).toFixed(1);
-      summary += (i + 1) + '. ' + s.title + ' (' + dur + 'sn)\n';
-    });
-    summary += '\nDetaylar console\'da.';
-    alert(summary);
+    renderViralCandidates(finalShorts);
 
   } catch (err) {
     console.error('Viral Analysis hatasi:', err);
@@ -1488,47 +1742,53 @@ function buildIntervalsForCandidate(candidate, words) {
 }
 
 document.getElementById('generateViralBtn').addEventListener('click', async function() {
-  if (!state.viralCandidates || state.viralCandidates.length === 0) {
-    alert('Once "AI Viral Analiz Et" tiklayip aday uretin.');
-    return;
-  }
-
   if (!state.words || state.words.length === 0) {
     alert('Word-level transkript yok. Yeniden transkripsiyon yapin.');
     return;
   }
 
-  const confirmMsg = state.viralCandidates.length + ' viral aday icin ayri ayri 9:16 sekans olusturulsun mu?\n\n' +
-                     'Her sekans icin yeni bir Premiere sekansi yaratilacak.\n' +
+  // Secili adaylari al
+  const checkboxes = document.querySelectorAll('#viralCandidatesList .viral-card-checkbox');
+  const selectedIndexes = Array.from(checkboxes)
+    .filter(function(cb) { return cb.checked; })
+    .map(function(cb) { return parseInt(cb.dataset.index, 10); });
+
+  if (selectedIndexes.length === 0) return;
+
+  const selectedCandidates = selectedIndexes.map(function(idx) { return state.viralCandidates[idx]; });
+
+  const confirmMsg = selectedCandidates.length + ' viral aday icin 9:16 sekans olusturulsun mu?\n' +
                      'Mevcut sekansiniz korunacak.';
-  if (!confirm(confirmMsg)) {
-    return;
-  }
+  if (!confirm(confirmMsg)) return;
 
   const btn = document.getElementById('generateViralBtn');
-  const originalText = btn.textContent;
   btn.disabled = true;
-  btn.textContent = 'Sekanslar olusturuluyor...';
+  document.getElementById('generateViralBtnText').textContent = 'Olusturuluyor...';
 
-  const allCandidatesWithIntervals = state.viralCandidates.map((c, idx) => ({
-    index: idx + 1,
-    title: c.title,
-    intervals: buildIntervalsForCandidate(c, state.words)
-  }));
+  const allCandidatesWithIntervals = selectedCandidates.map(function(c, idx) {
+    return {
+      index: idx + 1,
+      title: c.title,
+      intervals: buildIntervalsForCandidate(c, state.words)
+    };
+  });
 
-  const validCandidates = allCandidatesWithIntervals.filter(c => c.intervals.length > 0);
+  const validCandidates = allCandidatesWithIntervals.filter(function(c) { return c.intervals.length > 0; });
 
   if (validCandidates.length === 0) {
-    alert('Hicbir aday icin gecerli interval olusturulamadi. Word-level transkript yeniden yapin.');
-    btn.disabled = false;
-    btn.textContent = originalText;
+    showResultPanel('viral', {
+      success: false,
+      title: 'Hata',
+      description: 'Hicbir aday icin gecerli interval olusturulamadi. Word-level transkript yeniden yapin.'
+    });
+    updateGenerateButton();
     return;
   }
 
   console.log('Generating sequences for', validCandidates.length, 'candidates');
-  validCandidates.forEach((c, i) => {
+  validCandidates.forEach(function(c, i) {
     console.log((i + 1) + '. ' + c.title + ' — ' + c.intervals.length + ' interval');
-    c.intervals.forEach((iv, j) => {
+    c.intervals.forEach(function(iv, j) {
       console.log('   [' + j + '] ' + iv.mediaPath + ' src:' + iv.srcStart.toFixed(2) + '-' + iv.srcEnd.toFixed(2));
     });
   });
@@ -1538,29 +1798,160 @@ document.getElementById('generateViralBtn').addEventListener('click', async func
 
   csInterface.evalScript("createViralSequences('" + escapedJSON + "')", function(result) {
     console.log('Host returned:', result);
-    btn.disabled = false;
-    btn.textContent = originalText;
+    updateGenerateButton();
 
     try {
       const data = JSON.parse(result);
       if (data.ok) {
-        let summary = data.created.length + ' viral sekans olusturuldu:\n\n';
-        data.created.forEach(c => {
-          summary += '+ ' + c.name + ' (' + c.segments + ' segment)\n';
+        const items = data.created.map(function(c) { return c.name + ' (' + c.segments + ' segment)'; });
+        const failedItems = (data.failed || []).map(function(f) { return '✗ ' + f.title + ': ' + f.error; });
+        showResultPanel('viral', {
+          success: true,
+          title: t('viralResultTitle'),
+          description: t('viralResultDescription'),
+          items: items.concat(failedItems)
         });
-        if (data.failed && data.failed.length > 0) {
-          summary += '\nBasarisiz:\n';
-          data.failed.forEach(f => {
-            summary += '- ' + f.title + ': ' + f.error + '\n';
-          });
-        }
-        summary += '\nDetaylar console\'da.';
-        alert(summary);
       } else {
-        alert('Hata: ' + data.message);
+        showResultPanel('viral', {
+          success: false,
+          title: 'Hata',
+          description: data.message
+        });
       }
     } catch (e) {
+      console.error('Parse error:', e);
       alert('Parse hatasi. Console kontrol edin.\n\n' + result.substring(0, 300));
     }
   });
 });
+
+// ── Viral Candidate UI ────────────────────────────────────────────────────────
+function renderViralCandidates(candidates) {
+  const container = document.getElementById('viralCandidatesList');
+  container.innerHTML = '';
+  container.classList.remove('hidden');
+
+  const header = document.createElement('div');
+  header.className = 'viral-list-header';
+  header.innerHTML = '<span>' + candidates.length + ' ' + t('viralListHeader') + '</span>' +
+                     '<button class="select-all-toggle" id="selectAllToggle">' + t('deselectAll') + '</button>';
+  container.appendChild(header);
+
+  candidates.forEach(function(c, idx) {
+    const card = document.createElement('div');
+    card.className = 'viral-card selected';
+    card.dataset.index = idx;
+
+    const duration = (c.endSec - c.startSec).toFixed(1);
+    const tags = (c.tags || []).map(function(tag) {
+      return '<span class="viral-tag">' + tag + '</span>';
+    }).join('');
+
+    card.innerHTML =
+      '<div class="viral-card-row">' +
+        '<input type="checkbox" class="viral-card-checkbox" checked data-index="' + idx + '">' +
+        '<div class="viral-card-content">' +
+          '<div class="viral-card-title">' +
+            '<span>' + c.title + '</span>' +
+            '<span class="viral-card-duration">' + duration + 'sn</span>' +
+          '</div>' +
+          '<div class="viral-card-hook">' + c.hook + '</div>' +
+          (tags ? '<div class="viral-card-tags">' + tags + '</div>' : '') +
+          '<button class="viral-card-toggle" data-toggle-index="' + idx + '">' +
+            '<i data-lucide="info"></i>' +
+            '<span>' + t('showReasoning') + '</span>' +
+          '</button>' +
+          '<div class="viral-card-reasoning">' + c.reasoning + '</div>' +
+        '</div>' +
+      '</div>';
+
+    container.appendChild(card);
+  });
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+
+  container.querySelectorAll('.viral-card-checkbox').forEach(function(cb) {
+    cb.addEventListener('click', function(e) {
+      e.stopPropagation();
+      cb.closest('.viral-card').classList.toggle('selected', cb.checked);
+      updateGenerateButton();
+    });
+  });
+
+  container.querySelectorAll('.viral-card-toggle').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const card = container.querySelector('.viral-card[data-index="' + btn.dataset.toggleIndex + '"]');
+      const expanded = card.classList.toggle('expanded');
+      btn.querySelector('span').textContent = expanded ? t('hideReasoning') : t('showReasoning');
+    });
+  });
+
+  document.getElementById('selectAllToggle').addEventListener('click', function() {
+    const checkboxes = container.querySelectorAll('.viral-card-checkbox');
+    const allChecked = Array.from(checkboxes).every(function(cb) { return cb.checked; });
+    checkboxes.forEach(function(cb) {
+      cb.checked = !allChecked;
+      cb.closest('.viral-card').classList.toggle('selected', !allChecked);
+    });
+    document.getElementById('selectAllToggle').textContent = allChecked ? t('selectAll') : t('deselectAll');
+    updateGenerateButton();
+  });
+
+  updateGenerateButton();
+}
+
+function updateGenerateButton() {
+  const checkboxes = document.querySelectorAll('#viralCandidatesList .viral-card-checkbox');
+  if (checkboxes.length === 0) return;
+
+  const checkedCount = Array.from(checkboxes).filter(function(cb) { return cb.checked; }).length;
+  const totalCount = checkboxes.length;
+  const btnText = document.getElementById('generateViralBtnText');
+  const btn = document.getElementById('generateViralBtn');
+
+  if (checkedCount === 0) {
+    if (btnText) btnText.textContent = t('btnGenerateSelected') + ' (0)';
+    if (btn) btn.disabled = true;
+  } else if (checkedCount === totalCount) {
+    if (btnText) btnText.textContent = t('btnGenerateAll') + ' (' + totalCount + ')';
+    if (btn) btn.disabled = false;
+  } else {
+    if (btnText) btnText.textContent = t('btnGenerateSelected') + ' (' + checkedCount + ')';
+    if (btn) btn.disabled = false;
+  }
+}
+
+function showResultPanel(sectionId, opts) {
+  const sectionEl = sectionId === 'viral'
+    ? document.getElementById('viralSection')
+    : document.getElementById('jumpCutSection');
+  if (!sectionEl) return;
+
+  const existing = sectionEl.querySelector('.result-panel');
+  if (existing) existing.remove();
+
+  const panel = document.createElement('div');
+  panel.className = 'result-panel' + (opts.success ? '' : ' error');
+
+  const icon = opts.success ? 'check-circle' : 'alert-circle';
+  let html = '<div class="result-panel-header">' +
+             '<i data-lucide="' + icon + '"></i>' +
+             '<span>' + opts.title + '</span>' +
+             '</div>';
+
+  if (opts.description) {
+    html += '<div class="result-panel-desc">' + opts.description + '</div>';
+  }
+
+  if (opts.items && opts.items.length > 0) {
+    html += '<ul class="result-panel-list">';
+    opts.items.forEach(function(item) { html += '<li>' + item + '</li>'; });
+    html += '</ul>';
+  }
+
+  panel.innerHTML = html;
+  sectionEl.appendChild(panel);
+
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
