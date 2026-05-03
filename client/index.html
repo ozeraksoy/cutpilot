@@ -3,129 +3,154 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Talky - Altyazı Oluşturucu</title>
+  <title>Cutpilot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
   <!-- Header -->
-  <div class="header">
-    <div class="header-left">
-      <span class="logo">🎙</span>
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-mark">
+        <i data-lucide="scissors"></i>
+      </div>
       <div>
-        <div class="app-name">Talky</div>
-        <div class="app-sub">Altyazı Oluşturucu</div>
+        <div class="brand-name">Cutpilot</div>
+        <div class="brand-tagline" data-i18n="appTagline">AI editing asistani</div>
       </div>
     </div>
-    <button id="btnSettings" class="icon-btn" title="Ayarlar">⚙</button>
-  </div>
+    <div class="header-actions">
+      <select id="langSwitcher" class="lang-switcher" title="Language / Dil">
+        <option value="tr">TR</option>
+        <option value="en">EN</option>
+      </select>
+      <button id="btnSettings" class="icon-btn" title="Settings">
+        <i data-lucide="settings"></i>
+      </button>
+    </div>
+  </header>
 
-  <!-- Settings Panel (hidden by default) -->
-  <div id="settingsPanel" class="settings-panel hidden">
-    <div class="section-title">OpenAI API Anahtarı</div>
-    <div class="api-row">
+  <!-- Settings Panel -->
+  <div id="settingsPanel" class="card settings-panel hidden">
+    <h3 data-i18n="apiKeyLabel">OpenAI API Anahtari</h3>
+    <div class="input-group">
       <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false">
-      <button id="btnToggleKey" class="icon-btn" title="Göster/Gizle">👁</button>
+      <button id="btnToggleKey" class="icon-btn" title="Show/Hide">
+        <i data-lucide="eye"></i>
+      </button>
     </div>
     <div id="apiStatus" class="api-status"></div>
     <p class="hint">
-      API anahtarınız yalnızca bu cihazda ve yerel bellekte saklanır.<br>
-      <a href="#" id="linkOpenAI">OpenAI hesabınızdan alın →</a>
+      <span data-i18n="apiKeyHint">Anahtariniz sadece bu cihazda saklanir.</span><br>
+      <a href="#" id="linkOpenAI" data-i18n="apiKeyLink">OpenAI hesabinizdan alin</a> →
     </p>
 
-    <div class="section-title" style="margin-top:12px">ffmpeg Durumu</div>
-    <div id="ffmpegStatus" class="ffmpeg-status">Kontrol ediliyor...</div>
-    <p class="hint" id="ffmpegHint" style="display:none">
-      ffmpeg gereklidir. Kurulum için README dosyasına bakın.
-    </p>
+    <h3 style="margin-top:16px">FFmpeg</h3>
+    <div id="ffmpegStatus" class="ffmpeg-status" data-i18n="ffmpegStatusChecking">Kontrol ediliyor...</div>
+    <p class="hint" id="ffmpegHint" style="display:none">FFmpeg gereklidir. README dosyasina bakin.</p>
   </div>
 
-  <!-- Clip Detection -->
-  <div class="section">
-    <div class="section-header">
-      <span class="section-title">Aktif Klip</span>
+  <!-- Active Clip -->
+  <section class="card">
+    <div class="card-header">
+      <div class="card-title-group">
+        <i data-lucide="film"></i>
+        <h2 data-i18n="activeClipTitle">Aktif Klip</h2>
+      </div>
       <div class="btn-group">
-        <button id="btnGetAllClips" class="btn-sm" title="Aktif sekandaki tüm klipleri al">⏏ Tümü</button>
-        <button id="btnGetSelectedClip" class="btn-sm" title="Seçili klibi al">☑ Seçili</button>
+        <button id="btnGetAllClips" class="btn-secondary btn-sm">
+          <i data-lucide="layers"></i>
+          <span data-i18n="btnAllClips">Tum Klipler</span>
+        </button>
+        <button id="btnGetSelectedClip" class="btn-secondary btn-sm">
+          <i data-lucide="check-square"></i>
+          <span data-i18n="btnSelectedClip">Secili Klip</span>
+        </button>
+      </div>
+    </div>
+    <div id="clipInfoBox" class="clip-info">
+      <div class="empty-state">
+        <i data-lucide="film" class="empty-icon"></i>
+        <p data-i18n="clipPlaceholder">Klip bilgisi yok. Yukaridaki butonlardan birini kullanin.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Transcription -->
+  <section class="card">
+    <div class="card-header">
+      <div class="card-title-group">
+        <i data-lucide="mic"></i>
+        <h2 data-i18n="transcribeTitle">Transkripsiyon</h2>
       </div>
     </div>
 
-    <div id="clipInfoBox" class="clip-info-box">
-      <div class="clip-placeholder">
-        <span class="placeholder-icon">🎬</span>
-        <p>Klip bilgisi alınmadı.<br>Yukarıdaki butonlardan birini kullanın.</p>
+    <div class="form-grid">
+      <div class="form-row">
+        <label data-i18n="sourceLangLabel">Kaynak Dil</label>
+        <select id="sourceLanguage">
+          <option value="" data-i18n="autoDetect">Otomatik Tespit</option>
+          <option value="tr" selected>Turkce</option>
+          <option value="en">English</option>
+          <option value="de">Deutsch</option>
+          <option value="fr">Francais</option>
+          <option value="es">Espanol</option>
+          <option value="it">Italiano</option>
+          <option value="ru">Russky</option>
+          <option value="ar">Arabi</option>
+          <option value="ja">Nihongo</option>
+          <option value="ko">Hangugeo</option>
+          <option value="zh">Zhongwen</option>
+          <option value="pt">Portugues</option>
+          <option value="nl">Nederlands</option>
+          <option value="pl">Polski</option>
+          <option value="sv">Svenska</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label class="checkbox-label">
+          <input type="checkbox" id="translateEnabled">
+          <span class="checkmark"></span>
+          <span data-i18n="translateLabel">Ceviri Yap</span>
+        </label>
+      </div>
+
+      <div id="targetLangRow" class="form-row hidden">
+        <label data-i18n="targetLangLabel">Hedef Dil</label>
+        <select id="targetLanguage">
+          <option value="en" selected>English</option>
+          <option value="tr">Turkce</option>
+          <option value="de">Deutsch</option>
+          <option value="fr">Francais</option>
+          <option value="es">Espanol</option>
+          <option value="it">Italiano</option>
+          <option value="ru">Russky</option>
+          <option value="ar">Arabi</option>
+          <option value="ja">Nihongo</option>
+          <option value="ko">Hangugeo</option>
+          <option value="zh">Zhongwen (Simp.)</option>
+          <option value="pt">Portugues</option>
+          <option value="nl">Nederlands</option>
+          <option value="pl">Polski</option>
+          <option value="uk">Ukrainian</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label data-i18n="maxCharsLabel">Maks Karakter/Satir</label>
+        <input type="number" id="maxCharsPerLine" placeholder="Sinirsiz" min="10" max="300">
       </div>
     </div>
-  </div>
 
-  <!-- Transcription Settings -->
-  <div class="section">
-    <div class="section-title">Transkripsiyon Ayarları</div>
-
-    <div class="form-row">
-      <label>Kaynak Dil</label>
-      <select id="sourceLanguage">
-        <option value="">Otomatik Tespit</option>
-        <option value="tr" selected>Türkçe</option>
-        <option value="en">İngilizce</option>
-        <option value="de">Almanca</option>
-        <option value="fr">Fransızca</option>
-        <option value="es">İspanyolca</option>
-        <option value="it">İtalyanca</option>
-        <option value="ru">Rusça</option>
-        <option value="ar">Arapça</option>
-        <option value="ja">Japonca</option>
-        <option value="ko">Korece</option>
-        <option value="zh">Çince</option>
-        <option value="pt">Portekizce</option>
-        <option value="nl">Hollandaca</option>
-        <option value="pl">Lehçe</option>
-        <option value="sv">İsveççe</option>
-      </select>
-    </div>
-
-    <div class="form-row">
-      <label class="checkbox-label">
-        <input type="checkbox" id="translateEnabled">
-        <span class="checkmark"></span>
-        Çeviri Yap
-      </label>
-    </div>
-
-    <div class="form-row">
-      <label>Maks Karakter/Satır</label>
-      <input type="number" id="maxCharsPerLine" placeholder="Sınırsız" min="10" max="300" style="width:90px; flex:none">
-    </div>
-
-    <div id="targetLangRow" class="form-row hidden">
-      <label>Hedef Dil</label>
-      <select id="targetLanguage">
-        <option value="en" selected>İngilizce</option>
-        <option value="tr">Türkçe</option>
-        <option value="de">Almanca</option>
-        <option value="fr">Fransızca</option>
-        <option value="es">İspanyolca</option>
-        <option value="it">İtalyanca</option>
-        <option value="ru">Rusça</option>
-        <option value="ar">Arapça</option>
-        <option value="ja">Japonca</option>
-        <option value="ko">Korece</option>
-        <option value="zh">Çince (Basitleştirilmiş)</option>
-        <option value="pt">Portekizce</option>
-        <option value="nl">Hollandaca</option>
-        <option value="pl">Lehçe</option>
-        <option value="uk">Ukraynaca</option>
-      </select>
-    </div>
-  </div>
-
-  <!-- Transcribe Button -->
-  <div class="action-area">
     <button id="btnTranscribe" class="btn-primary" disabled>
-      <span class="btn-icon">🎙</span>
-      <span id="btnTranscribeText">Transkripsiyon Başlat</span>
+      <i data-lucide="play"></i>
+      <span id="btnTranscribeText" data-i18n="btnStartTranscribe">Transkripsiyon Baslat</span>
     </button>
-  </div>
+  </section>
 
   <!-- Progress -->
   <div id="progressArea" class="progress-area hidden">
@@ -133,73 +158,121 @@
       <div id="progressBar" class="progress-bar" style="width:0%"></div>
     </div>
     <div class="progress-info">
-      <span class="spinner">◌</span>
-      <span id="progressText">İşleniyor...</span>
+      <i data-lucide="loader-2" class="spin"></i>
+      <span id="progressText" data-i18n="processing">Isleniyor...</span>
     </div>
   </div>
 
   <!-- Error -->
   <div id="errorBox" class="error-box hidden">
-    <span class="error-icon">⚠</span>
+    <i data-lucide="alert-circle"></i>
     <span id="errorText"></span>
-    <button id="btnDismissError" class="icon-btn-sm">✕</button>
+    <button id="btnDismissError" class="icon-btn-sm">
+      <i data-lucide="x"></i>
+    </button>
   </div>
 
   <!-- Results -->
-  <div id="resultsSection" class="section hidden">
-    <div class="section-header">
-      <span class="section-title">Sonuçlar</span>
+  <section id="resultsSection" class="card hidden">
+    <div class="card-header">
+      <div class="card-title-group">
+        <i data-lucide="file-text"></i>
+        <h2 data-i18n="resultsTitle">Sonuclar</h2>
+      </div>
       <div class="btn-group">
-        <button id="btnShowOriginal" class="btn-sm active" title="Orijinal metni göster">TR</button>
-        <button id="btnShowTranslated" class="btn-sm hidden" title="Çeviriyi göster">ÇEVİRİ</button>
+        <button id="btnShowOriginal" class="btn-tab active">TR</button>
+        <button id="btnShowTranslated" class="btn-tab hidden">EN</button>
       </div>
     </div>
-
     <div id="segmentsList" class="segments-list"></div>
-
-    <div class="segments-stats">
-      <span id="segmentsCount">0 segment</span>
-      <span id="totalDuration"></span>
+    <div class="card-footer">
+      <span id="segmentsCount" class="caption">0 segment</span>
+      <span id="totalDuration" class="caption mono"></span>
     </div>
-  </div>
+  </section>
 
   <!-- Export -->
-  <div id="exportSection" class="section hidden">
-    <div class="section-title">Dışa Aktar</div>
-
-    <div class="export-options">
+  <section id="exportSection" class="card hidden">
+    <div class="card-header">
+      <div class="card-title-group">
+        <i data-lucide="download"></i>
+        <h2 data-i18n="exportTitle">Disa Aktar</h2>
+      </div>
+    </div>
+    <div class="radio-group">
       <label class="radio-label">
         <input type="radio" name="exportContent" value="original" checked>
-        <span>Orijinal Transkripsiyon</span>
+        <span data-i18n="originalTranscript">Orijinal Transkripsiyon</span>
       </label>
       <label class="radio-label hidden" id="radioTranslatedLabel">
         <input type="radio" name="exportContent" value="translated">
-        <span>Çeviri</span>
+        <span data-i18n="translation">Ceviri</span>
       </label>
     </div>
-
-    <div class="export-buttons">
-      <button id="btnSaveSRT" class="btn-export">
-        <span>💾</span> SRT Dosyası Kaydet
+    <div class="btn-row">
+      <button id="btnSaveSRT" class="btn-secondary">
+        <i data-lucide="save"></i>
+        <span data-i18n="btnSaveSRT">SRT Dosyasi Kaydet</span>
       </button>
-      <button id="btnImportPP" class="btn-export">
-        <span>📥</span> Premiere'e İçe Aktar
+      <button id="btnImportPP" class="btn-secondary">
+        <i data-lucide="upload"></i>
+        <span data-i18n="btnImportPP">Premiere'e Ice Aktar</span>
       </button>
     </div>
-
     <div id="exportStatus" class="export-status hidden"></div>
-  </div>
+  </section>
 
-  <!-- Jump Cut Test -->
-  <div style="margin-top: 20px; padding: 16px; border: 1px solid #444;">
-    <h3>Jump Cut (Test)</h3>
-    <button id="jumpCutTestBtn">Jump Cut Testi</button>
-    <button id="viralAnalyzeBtn" style="margin-top: 8px;">AI Viral Analiz Et</button>
-    <button id="generateViralBtn" style="margin-top: 8px;" disabled>Viral Sekanslari Olustur</button>
-  </div>
+  <!-- Jump Cut -->
+  <section class="card hidden" id="jumpCutSection">
+    <div class="card-header">
+      <div class="card-title-group">
+        <i data-lucide="scissors"></i>
+        <h2 data-i18n="jumpCutTitle">Jump Cut</h2>
+      </div>
+    </div>
+    <p class="card-description" data-i18n="jumpCutDescription">Sessizlikleri ve filler kelimeleri otomatik olarak temizler.</p>
+    <button id="jumpCutTestBtn" class="btn-primary">
+      <i data-lucide="scissors"></i>
+      <span data-i18n="btnJumpCut">Jump Cut Olustur</span>
+    </button>
+  </section>
 
-  <!-- CSInterface kütüphanesi -->
+  <!-- AI Viral Shorts -->
+  <section class="card hidden" id="viralSection">
+    <div class="card-header">
+      <div class="card-title-group">
+        <i data-lucide="sparkles"></i>
+        <h2 data-i18n="viralTitle">AI Viral Shorts</h2>
+        <span class="badge">AI</span>
+      </div>
+    </div>
+    <p class="card-description" data-i18n="viralDescription">AI ile transkriptten viral parcalar bulup 9:16 sekanslara donusturur.</p>
+    <div class="btn-row">
+      <button id="viralAnalyzeBtn" class="btn-secondary">
+        <i data-lucide="search"></i>
+        <span data-i18n="btnAnalyzeViral">Viral Adaylari Bul</span>
+      </button>
+      <button id="generateViralBtn" class="btn-primary" disabled>
+        <i data-lucide="sparkles"></i>
+        <span data-i18n="btnGenerateViral">Viral Sekanslari Olustur</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="app-footer">
+    <a href="https://buymeacoffee.com/ozeraksoy" target="_blank" class="coffee-link" id="coffeeLink">
+      <i data-lucide="coffee"></i>
+      <span data-i18n="coffeeText">Bana kahve ismarla</span>
+    </a>
+    <span class="caption mono" data-i18n="versionText">Cutpilot v1.0</span>
+  </footer>
+
+  <!-- Lucide icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <!-- CSInterface -->
   <script src="CSInterface.js"></script>
+  <!-- App -->
   <script src="app.js"></script>
 </body>
 </html>

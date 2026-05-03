@@ -84,6 +84,113 @@ function isFillerWord(word) {
   return FILLER_WORDS.indexOf(cleaned) !== -1;
 }
 
+// ── i18n ──────────────────────────────────────────────────────────────────────
+const i18n = {
+  tr: {
+    appTagline: 'AI editing asistani',
+    apiKeyLabel: 'OpenAI API Anahtari',
+    apiKeyHint: 'Anahtariniz sadece bu cihazda saklanir.',
+    apiKeyLink: 'OpenAI hesabinizdan alin',
+    ffmpegStatusChecking: 'Kontrol ediliyor...',
+    activeClipTitle: 'Aktif Klip',
+    btnAllClips: 'Tum Klipler',
+    btnSelectedClip: 'Secili Klip',
+    clipPlaceholder: 'Klip bilgisi yok. Yukaridaki butonlardan birini kullanin.',
+    transcribeTitle: 'Transkripsiyon',
+    sourceLangLabel: 'Kaynak Dil',
+    autoDetect: 'Otomatik Tespit',
+    translateLabel: 'Ceviri Yap',
+    targetLangLabel: 'Hedef Dil',
+    maxCharsLabel: 'Maks Karakter/Satir',
+    btnStartTranscribe: 'Transkripsiyon Baslat',
+    resultsTitle: 'Sonuclar',
+    exportTitle: 'Disa Aktar',
+    originalTranscript: 'Orijinal Transkripsiyon',
+    translation: 'Ceviri',
+    btnSaveSRT: 'SRT Dosyasi Kaydet',
+    btnImportPP: "Premiere'e Ice Aktar",
+    jumpCutTitle: 'Jump Cut',
+    jumpCutDescription: 'Sessizlikleri ve filler kelimeleri otomatik olarak temizler.',
+    btnJumpCut: 'Jump Cut Olustur',
+    viralTitle: 'AI Viral Shorts',
+    viralDescription: 'AI ile transkriptten viral parcalar bulup 9:16 sekanslara donusturur.',
+    btnAnalyzeViral: 'Viral Adaylari Bul',
+    btnGenerateViral: 'Viral Sekanslari Olustur',
+    coffeeText: 'Bana kahve ismarla',
+    versionText: 'Cutpilot v1.0',
+    processing: 'Isleniyor...',
+    aiThinking: 'AI dusunuyor...',
+  },
+  en: {
+    appTagline: 'AI editing copilot',
+    apiKeyLabel: 'OpenAI API Key',
+    apiKeyHint: 'Your key is stored only on this device.',
+    apiKeyLink: 'Get one from your OpenAI account',
+    ffmpegStatusChecking: 'Checking...',
+    activeClipTitle: 'Active Clip',
+    btnAllClips: 'All Clips',
+    btnSelectedClip: 'Selected Clip',
+    clipPlaceholder: 'No clip info. Use one of the buttons above.',
+    transcribeTitle: 'Transcription',
+    sourceLangLabel: 'Source Language',
+    autoDetect: 'Auto-detect',
+    translateLabel: 'Translate',
+    targetLangLabel: 'Target Language',
+    maxCharsLabel: 'Max Chars/Line',
+    btnStartTranscribe: 'Start Transcription',
+    resultsTitle: 'Results',
+    exportTitle: 'Export',
+    originalTranscript: 'Original Transcription',
+    translation: 'Translation',
+    btnSaveSRT: 'Save SRT File',
+    btnImportPP: 'Import to Premiere',
+    jumpCutTitle: 'Jump Cut',
+    jumpCutDescription: 'Auto-removes silences and filler words.',
+    btnJumpCut: 'Create Jump Cut',
+    viralTitle: 'AI Viral Shorts',
+    viralDescription: 'Find viral clips from transcript and create 9:16 sequences with AI.',
+    btnAnalyzeViral: 'Find Viral Candidates',
+    btnGenerateViral: 'Create Viral Sequences',
+    coffeeText: 'Buy me a coffee',
+    versionText: 'Cutpilot v1.0',
+    processing: 'Processing...',
+    aiThinking: 'AI thinking...',
+  }
+};
+
+let currentLang = localStorage.getItem('cutpilot_lang') || 'tr';
+
+function t(key) {
+  return (i18n[currentLang] && i18n[currentLang][key]) || key;
+}
+
+function setLanguage(lang) {
+  if (lang !== 'tr' && lang !== 'en') return;
+  currentLang = lang;
+  localStorage.setItem('cutpilot_lang', lang);
+  applyTranslations();
+}
+
+function applyTranslations() {
+  document.querySelectorAll('[data-i18n]').forEach(function(el) {
+    const key = el.getAttribute('data-i18n');
+    const text = t(key);
+    if (el.tagName === 'INPUT' && el.placeholder !== undefined) {
+      el.placeholder = text;
+    } else {
+      el.textContent = text;
+    }
+  });
+}
+
+function updateSectionVisibility() {
+  const hasSegments = state.segments && state.segments.length > 0;
+  document.getElementById('resultsSection').classList.toggle('hidden', !hasSegments);
+  document.getElementById('exportSection').classList.toggle('hidden', !hasSegments);
+  document.getElementById('jumpCutSection').classList.toggle('hidden', !hasSegments);
+  document.getElementById('viralSection').classList.toggle('hidden', !hasSegments);
+}
+
 // ── Başlatma ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', init);
 
@@ -115,6 +222,15 @@ function init() {
     e.preventDefault();
     if (csInterface) csInterface.openURLInDefaultBrowser('https://platform.openai.com/api-keys');
   });
+
+  // i18n
+  const switcher = document.getElementById('langSwitcher');
+  if (switcher) {
+    switcher.value = currentLang;
+    switcher.addEventListener('change', function(e) { setLanguage(e.target.value); });
+  }
+  applyTranslations();
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 // ── Ayarlar ───────────────────────────────────────────────────────────────────
@@ -374,8 +490,7 @@ async function startTranscription() {
     state.showTranslation = false;
     renderResults(translateEnabled);
 
-    document.getElementById('resultsSection').classList.remove('hidden');
-    document.getElementById('exportSection').classList.remove('hidden');
+    updateSectionVisibility();
 
     if (translateEnabled) {
       document.getElementById('btnShowTranslated').classList.remove('hidden');
