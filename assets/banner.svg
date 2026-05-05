@@ -1,0 +1,41 @@
+<svg width="100%" viewBox="0 0 1280 320" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>Cutpilot - AI editing copilot for Premiere Pro</title>
+  <desc>Banner with Cutpilot wordmark, scissors mark, and feature list on dark background.</desc>
+
+  <rect width="1280" height="320" fill="#1a1a1a"/>
+
+  <g transform="translate(80, 110)">
+    <rect x="0" y="0" width="84" height="84" rx="18" fill="#d97757"/>
+    <g transform="translate(42, 42) rotate(-45)" fill="none" stroke="#1a1a1a" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="-13" cy="13" r="6"/>
+      <circle cx="13" cy="13" r="6"/>
+      <path d="M -8 8 L 18 -18"/>
+      <path d="M 8 8 L -18 -18"/>
+      <path d="M 0 0 L 0 -22"/>
+    </g>
+  </g>
+
+  <text x="200" y="170" font-family="Onest, -apple-system, sans-serif" font-size="76" font-weight="600" fill="#f5f5f5" letter-spacing="-2">Cutpilot</text>
+  <text x="200" y="220" font-family="Onest, -apple-system, sans-serif" font-size="22" font-weight="400" fill="#a3a3a3">Skip the boring parts of editing.</text>
+
+  <g font-family="JetBrains Mono, monospace" font-size="13" fill="#6b6b6b">
+    <text x="200" y="264">whisper transcription</text>
+    <text x="390" y="264">.</text>
+    <text x="406" y="264">jump cut</text>
+    <text x="488" y="264">.</text>
+    <text x="504" y="264">ai viral shorts</text>
+    <text x="626" y="264">.</text>
+    <text x="642" y="264">9:16 sequences</text>
+  </g>
+
+  <g transform="translate(1100, 145)" fill="none" stroke="#383838" stroke-width="0.5">
+    <rect x="0" y="0" width="100" height="56" rx="6"/>
+    <line x1="0" y1="14" x2="100" y2="14"/>
+    <circle cx="8" cy="7" r="2.5" fill="#c4564f" stroke="none"/>
+    <circle cx="18" cy="7" r="2.5" fill="#d4a854" stroke="none"/>
+    <circle cx="28" cy="7" r="2.5" fill="#4a9d4a" stroke="none"/>
+    <rect x="8" y="22" width="60" height="6" rx="1" fill="#d97757" stroke="none" opacity="0.85"/>
+    <rect x="8" y="34" width="40" height="6" rx="1" fill="#383838" stroke="none"/>
+    <rect x="8" y="44" width="80" height="6" rx="1" fill="#383838" stroke="none"/>
+  </g>
+</svg>

@@ -1,38 +1,38 @@
 @echo off
-REM ─────────────────────────────────────────────────────────────────────────────
-REM Talky - Premiere Pro Altyazı Oluşturucu
-REM Windows Kurulum Scripti
-REM ─────────────────────────────────────────────────────────────────────────────
+REM Cutpilot - Windows install script
 
 setlocal EnableDelayedExpansion
 
-set EXTENSION_ID=com.talky.captioner
+set EXTENSION_ID=com.cutpilot.app
 set CEP_DIR=%APPDATA%\Adobe\CEP\extensions
 set INSTALL_DIR=%CEP_DIR%\%EXTENSION_ID%
+set OLD_TALKY_DIR=%CEP_DIR%\com.talky.captioner
 set SCRIPT_DIR=%~dp0
 set SOURCE_DIR=%SCRIPT_DIR%..
 
 echo.
-echo  ==========================================
-echo    Talky - Altyazı Oluşturucu Kurulum
-echo  ==========================================
+echo  ==============================================
+echo       Cutpilot - Premiere Pro Installer
+echo  ==============================================
 echo.
 
-REM ── 1. CEP klasörünü oluştur ────────────────────────────────────────────────
-echo  ^> CEP extensions klasörü hazırlanıyor...
-if not exist "%CEP_DIR%" mkdir "%CEP_DIR%"
-
-REM ── 2. Eski kurulumu temizle ─────────────────────────────────────────────────
+REM 1. Remove old installs
+if exist "%OLD_TALKY_DIR%" (
+    echo  ^> Removing old Talky installation...
+    rmdir /s /q "%OLD_TALKY_DIR%"
+)
 if exist "%INSTALL_DIR%" (
-    echo  ^> Eski kurulum kaldırılıyor...
+    echo  ^> Removing previous Cutpilot installation...
     rmdir /s /q "%INSTALL_DIR%"
 )
 
-REM ── 3. Plugin dosyalarını kopyala ────────────────────────────────────────────
-echo  ^> Plugin dosyaları kopyalanıyor...
+REM 2. Prepare CEP folder
+echo  ^> Preparing CEP extensions folder...
+if not exist "%CEP_DIR%" mkdir "%CEP_DIR%"
 mkdir "%INSTALL_DIR%"
-mkdir "%INSTALL_DIR%\lib"
 
+REM 3. Copy plugin files
+echo  ^> Copying Cutpilot files...
 xcopy /e /i /q "%SOURCE_DIR%\CSXS"   "%INSTALL_DIR%\CSXS\"
 xcopy /e /i /q "%SOURCE_DIR%\client" "%INSTALL_DIR%\client\"
 xcopy /e /i /q "%SOURCE_DIR%\host"   "%INSTALL_DIR%\host\"
@@ -41,63 +41,44 @@ if exist "%SOURCE_DIR%\.debug" (
     copy "%SOURCE_DIR%\.debug" "%INSTALL_DIR%\.debug"
 )
 
-echo  ^> Dosyalar kopyalandı: %INSTALL_DIR%
+echo     OK Files copied to: %INSTALL_DIR%
 
-REM ── 4. CSInterface.js indir ──────────────────────────────────────────────────
-echo  ^> CSInterface.js indiriliyor...
-set CSINTERFACE_URL=https://raw.githubusercontent.com/Adobe-CEP/CEP-Resources/master/CEP_11.x/CEP_11.0/CSInterface.js
-set CSINTERFACE_PATH=%INSTALL_DIR%\lib\CSInterface.js
-
-powershell -Command "try { Invoke-WebRequest -Uri '%CSINTERFACE_URL%' -OutFile '%CSINTERFACE_PATH%' -UseBasicParsing; Write-Host '  OK CSInterface.js indirildi.' } catch { Write-Host '  WARN CSInterface.js indirilemedi. Manuel indirmeniz gerekebilir.' }"
-
-REM ── 5. CEP Debug Modu (Registry) ─────────────────────────────────────────────
-echo  ^> CEP debug modu etkinleştiriliyor...
-
+REM 4. Enable CEP debug mode
+echo  ^> Enabling CEP debug mode...
 for %%v in (9 10 11 12) do (
     reg add "HKCU\Software\Adobe\CSXS.%%v" /v PlayerDebugMode /t REG_SZ /d 1 /f >nul 2>&1
-    echo    OK CSXS.%%v PlayerDebugMode = 1
+    echo     OK CSXS.%%v PlayerDebugMode = 1
 )
 
-REM ── 6. ffmpeg Kontrolü ───────────────────────────────────────────────────────
+REM 5. FFmpeg check
 echo.
-echo  ^> ffmpeg kontrol ediliyor...
+echo  ^> Checking for FFmpeg...
 where ffmpeg >nul 2>&1
 if %errorlevel% == 0 (
-    echo    OK ffmpeg mevcut (PATH'de bulundu)
+    echo     OK FFmpeg is installed.
 ) else (
     echo.
-    echo    UYARI: ffmpeg BULUNAMADI!
+    echo     ! FFmpeg not found.
     echo.
-    echo    ffmpeg kurmak icin:
-    echo    1. Winget ile (onerillen):
-    echo       winget install ffmpeg
-    echo.
-    echo    2. Chocolatey ile:
-    echo       choco install ffmpeg
-    echo.
-    echo    3. Manuel indirme:
-    echo       https://www.gyan.dev/ffmpeg/builds/
-    echo       (ffmpeg-release-full.7z indirin, PATH'e ekleyin)
+    echo     Install options:
+    echo     1. winget install ffmpeg
+    echo     2. choco install ffmpeg
+    echo     3. https://www.gyan.dev/ffmpeg/builds/  (manual)
     echo.
 )
 
-REM ── 7. Kurulum Özeti ─────────────────────────────────────────────────────────
+REM 6. Done
 echo.
-echo  ==========================================
-echo          KURULUM TAMAMLANDI!
-echo  ==========================================
+echo  ==============================================
+echo            INSTALLATION COMPLETE
+echo  ==============================================
 echo.
-echo  Kurulum konumu:
-echo    %INSTALL_DIR%
+echo  Next steps:
+echo    1. Quit and reopen Premiere Pro
+echo    2. Window ^> Extensions ^> Cutpilot
+echo    3. Click the gear icon, paste your OpenAI API key
+echo       (get one from platform.openai.com/api-keys)
 echo.
-echo  Sonraki adımlar:
-echo    1. Premiere Pro'yu yeniden baslatin
-echo    2. Menu: Window ^> Extensions ^> Talky - Altyazi Olusturucu
-echo    3. API anahtarinizi girin (platform.openai.com/api-keys)
+echo  Debug: Chrome ^> http://localhost:7777
 echo.
-echo  Sorun cikarsa:
-echo    - Hata ayiklama: Chrome'da http://localhost:7777 adresini acin
-echo    - README.md dosyasini okuyun
-echo.
-
 pause

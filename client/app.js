@@ -1,5 +1,5 @@
 /**
- * Talky - Premiere Pro Altyazı Oluşturucu
+ * Cutpilot - AI Editing Copilot for Premiere Pro
  * Ana uygulama mantığı
  */
 
@@ -441,7 +441,7 @@ document.addEventListener('DOMContentLoaded', init);
 
 function init() {
   // API anahtarını yükle
-  state.apiKey = localStorage.getItem('talky_api_key') || '';
+  state.apiKey = localStorage.getItem('cutpilot_api_key') || '';
   document.getElementById('apiKey').value = state.apiKey;
   if (state.apiKey) {
     setApiStatus('ok', 'API anahtarı yüklendi.');
@@ -500,10 +500,10 @@ function onApiKeyChange() {
   const val = document.getElementById('apiKey').value.trim();
   state.apiKey = val;
   if (val) {
-    localStorage.setItem('talky_api_key', val);
+    localStorage.setItem('cutpilot_api_key', val);
     setApiStatus('ok', 'Kaydedildi.');
   } else {
-    localStorage.removeItem('talky_api_key');
+    localStorage.removeItem('cutpilot_api_key');
     setApiStatus('err', 'API anahtarı girilmedi.');
   }
   updateTranscribeButton();
@@ -911,7 +911,7 @@ function extractAudio(videoPath, startSec, durationSec) {
     }
 
     const tmpDir    = os.tmpdir();
-    const outFile   = path.join(tmpDir, 'talky_audio_' + Date.now() + '.mp3');
+    const outFile   = path.join(tmpDir, 'cutpilot_audio_' + Date.now() + '.mp3');
 
     const args = [
       '-ss', startSec.toFixed(3),
@@ -947,7 +947,7 @@ function whisperTranscribe(audioFilePath, apiKey, language) {
       reject(new Error('Node.js modülleri erişilemez.')); return;
     }
 
-    const boundary = 'TalkyBoundary' + Date.now();
+    const boundary = 'CutpilotBoundary' + Date.now();
     const fileName  = path.basename(audioFilePath);
 
     let fileBuffer;
@@ -1299,7 +1299,7 @@ async function importToPremiere() {
   const srtContent = await generateSRT(useTranslation);
 
   // Geçici SRT dosyası oluştur
-  const tmpPath = path.join(os.tmpdir(), 'talky_import_' + Date.now() + '.srt');
+  const tmpPath = path.join(os.tmpdir(), 'cutpilot_import_' + Date.now() + '.srt');
 
   try {
     fs.writeFileSync(tmpPath, srtContent, 'utf8');

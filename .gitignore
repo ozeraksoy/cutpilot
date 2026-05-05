@@ -1,17 +1,34 @@
-# macOS
+# OS
 .DS_Store
-**/.DS_Store
+Thumbs.db
+desktop.ini
 
-# Claude Code sistem dosyaları
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code workspace (private)
 .claude/
-CLAUDE.md
-.babelrc
 
-# CEP lib klasörü (kurulumda oluşturuluyor)
-lib/
-
-# Node
+# Build artifacts
+*.zxp
+*.zip
 node_modules/
+dist/
+build/
 
-# CSInterface.js dahil et (plugin için gerekli)
-!client/CSInterface.js
+# Logs
+npm-debug.log
+yarn-error.log
+*.log
+
+# Local backups
+*.OLD_BACKUP
+*_BACKUP/
+*_backup/
+*.bak
+
+# OS specific
+*.local

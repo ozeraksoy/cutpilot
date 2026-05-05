@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <ExtensionManifest
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  ExtensionBundleId="com.talky.captioner"
+  ExtensionBundleId="com.cutpilot.app"
   ExtensionBundleVersion="1.0.0"
-  ExtensionBundleName="Talky"
+  ExtensionBundleName="Cutpilot"
   Version="10.0">
 
   <ExtensionList>
-    <Extension Id="com.talky.captioner.panel" Version="1.0.0"/>
+    <Extension Id="com.cutpilot.app.panel" Version="1.0.0"/>
   </ExtensionList>
 
   <ExecutionEnvironment>
@@ -23,7 +23,7 @@
   </ExecutionEnvironment>
 
   <DispatchInfoList>
-    <Extension Id="com.talky.captioner.panel">
+    <Extension Id="com.cutpilot.app.panel">
       <DispatchInfo>
         <Resources>
           <MainPath>./client/index.html</MainPath>
@@ -40,7 +40,7 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>Talky - Altyazı Oluşturucu</Menu>
+          <Menu>Cutpilot</Menu>
           <Geometry>
             <Size>
               <Height>720</Height>
